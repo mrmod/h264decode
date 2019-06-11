@@ -112,7 +112,8 @@ func readNalUnit(r *H264Reader) (*NalUnit, *BitReader) {
 
 func handleConnection(connection io.Reader) {
 	logger.Printf("debug: handling connection\n")
-	streamFilename := "/home/bruce/devel/go/src/github.com/mrmod/cvnightlife/output.mp4"
+	cwd, _ := os.Getwd()
+	streamFilename := cwd + "/output.mp4"
 	_ = os.Remove(streamFilename)
 	debugFile, err := os.Create(streamFilename)
 	if err != nil {

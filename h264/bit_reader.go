@@ -2,10 +2,11 @@ package h264
 
 import (
 	"fmt"
-	"github.com/mrmod/degolomb"
 	"io"
 	"math"
 	"os"
+
+	"github.com/mrmod/degolomb"
 )
 
 type BitReader struct {
@@ -231,7 +232,12 @@ func (b *BitReader) IsByteAligned() bool {
 
 func (b *BitReader) ReadOneBit() int {
 	buf := make([]int, 1)
-	_, _ = b.Read(buf)
+
+	_, err := b.Read(buf)
+	if err != nil {
+		logger.Printf("error: unable to read more bits: %v", err)
+		b.LogStreamPosition()
+	}
 	return buf[0]
 }
 func (b *BitReader) RewindBits(n int) error {

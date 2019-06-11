@@ -99,6 +99,8 @@ type SliceData struct {
 	RefIdxL1                 []int
 	MvdL0                    [][][]int
 	MvdL1                    [][][]int
+	SubMbType                []int
+	CurrMbAddr               int
 }
 
 // Table 7-6
@@ -119,14 +121,6 @@ func flagVal(b bool) int {
 	if b {
 		return 1
 	}
-	return 0
-}
-
-// context-adaptive arithmetic entropy-coded element (CABAC)
-// 9.3
-// When parsing the slice date of a slice (7.3.4) the initialization is 9.3.1
-func (d SliceData) ae(v int) int {
-	// 9.3.1.1 : CABAC context initialization ctxIdx
 	return 0
 }
 
@@ -175,49 +169,6 @@ func PicSizeInMbs(sps *SPS, header *SliceHeader) int {
 	return PicWidthInMbs(sps) * PicHeightInMbs(sps, header)
 }
 
-// table 6-1
-func SubWidthC(sps *SPS) int {
-	n := 17
-	if sps.UseSeparateColorPlane {
-		if sps.ChromaFormat == 3 {
-			return n
-		}
-	}
-
-	switch sps.ChromaFormat {
-	case 0:
-		return n
-	case 1:
-		n = 2
-	case 2:
-		n = 2
-	case 3:
-		n = 1
-
-	}
-	return n
-}
-func SubHeightC(sps *SPS) int {
-	n := 17
-	if sps.UseSeparateColorPlane {
-		if sps.ChromaFormat == 3 {
-			return n
-		}
-	}
-	switch sps.ChromaFormat {
-	case 0:
-		return n
-	case 1:
-		n = 2
-	case 2:
-		n = 1
-	case 3:
-		n = 1
-
-	}
-	return n
-}
-
 // 7-36
 func CodedBlockPatternLuma(data *SliceData) int {
 	return data.CodedBlockPattern % 16
@@ -232,30 +183,252 @@ func DQId(nalUnit *NalUnit) int {
 	return (nalUnit.DependencyId << 4) + nalUnit.QualityId
 }
 
-// Annex G p527
+// Annex G p527, G.8.4.1 undeclared subsection for derivation of numMbPart
 func NumMbPart(nalUnit *NalUnit, sps *SPS, header *SliceHeader, data *SliceData) int {
 	sliceType := sliceTypeMap[header.SliceType]
+	if sliceType == "B" {
+		logger.Printf("error: Dropping B slice on the floor")
+		return -1
+	}
 	numMbPart := 0
-	if MbTypeName(sliceType, CurrMbAddr(sps, header)) == "B_SKIP" || MbTypeName(sliceType, CurrMbAddr(sps, header)) == "B_Direct_16x16" {
+	if MbTypeName(sliceType, data.CurrMbAddr) == "B_SKIP" || MbTypeName(sliceType, data.CurrMbAddr) == "B_Direct_16x16" {
 		if DQId(nalUnit) == 0 && nalUnit.Type != 20 {
 			numMbPart = 4
 		} else if DQId(nalUnit) > 0 && nalUnit.Type == 20 {
 			numMbPart = 1
 		}
-	} else if MbTypeName(sliceType, CurrMbAddr(sps, header)) != "B_SKIP" && MbTypeName(sliceType, CurrMbAddr(sps, header)) != "B_Direct_16x16" {
-		numMbPart = CurrMbAddr(sps, header)
+	} else if MbTypeName(sliceType, data.CurrMbAddr) != "B_SKIP" && MbTypeName(sliceType, data.CurrMbAddr) != "B_Direct_16x16" {
+		numMbPart = data.CurrMbAddr
 
 	}
 	return numMbPart
 }
+func SubMbPredMode(s *SliceContext, subMbType int) string {
+	switch subMbType {
+	case 1, 2, 3, 4:
+		return "Pred_L0"
+	}
+	return "na"
+}
 
-func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) {
+// 7.3.5.2 subMbPred
+// returns []int : []subMbType
+func SubMbPred(s *SliceContext, b *BitReader, mbTypeName string) []int {
+	subMbTypeList := []int{}
+	// 1
+	for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+		var v int
+		if s.PPS.EntropyCodingMode == 1 {
+			// TODO: ae(v)
+			logger.Printf("debug: TODO ae(v) implementation")
+			v = 0
+		} else {
+			v = ue(b.golomb())
+		}
+		subMbTypeList = append(subMbTypeList, v)
+	}
+	// 2
+	for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+		rangeMax := 8
+		subMbTypeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], subMbTypeList[mbPartIdx])
+		subMbPredModeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], SubMbPred(s, b, subMbTypeName)[mbPartIdx])
+		if (s.Slice.Header.NumRefIdxL0ActiveMinus1 > 0 || s.Slice.Data.MbFieldDecodingFlag != s.Slice.Header.FieldPic) && mbTypeName != "P_8x8ref0" && subMbTypeName != "B_Direct_8x8" && subMbPredModeName != "Pred_L1" {
+			var v int
+			if s.PPS.EntropyCodingMode == 1 {
+				// TODO: ae(v)
+				logger.Printf("debug: TODO ae(v) refIdxL0")
+				v = 0
+			} else {
+				v = te(b.golomb(), rangeMax) // TODO: What is rangeMax?
+
+			}
+			if mbPartIdx < len(s.Slice.Data.RefIdxL0) {
+				s.Slice.Data.RefIdxL0[mbPartIdx] = v
+			} else {
+				s.Slice.Data.RefIdxL0 = append(s.Slice.Data.RefIdxL0, v)
+			}
+		}
+	}
+	// 3
+	for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+		rangeMax := 8
+
+		subMbTypeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], subMbTypeList[mbPartIdx])
+		subMbPredModeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], SubMbPred(s, b, subMbTypeName)[mbPartIdx])
+		if (s.Slice.Header.NumRefIdxL1ActiveMinus1 > 0 || s.Slice.Data.MbFieldDecodingFlag != s.Slice.Header.FieldPic) && subMbTypeName != "B_Direct_8x8" && subMbPredModeName != "Pred_L0" {
+			var v int
+			if s.PPS.EntropyCodingMode == 1 {
+				// TODO: ae(v)
+				logger.Printf("debug: TODO ae(v) refIdxL1")
+				v = 0
+			} else {
+				v = te(b.golomb(), rangeMax) // TODO: What is rangeMax?
+
+			}
+			if mbPartIdx < len(s.Slice.Data.RefIdxL0) {
+				s.Slice.Data.RefIdxL1[mbPartIdx] = v
+			} else {
+				s.Slice.Data.RefIdxL1 = append(s.Slice.Data.RefIdxL1, v)
+			}
+		}
+	}
+
+	// 4
+	for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+		subMbTypeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], subMbTypeList[mbPartIdx])
+		subMbPredModeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], SubMbPred(s, b, subMbTypeName)[mbPartIdx])
+
+		if subMbTypeName != "B_Direct_8x8" && subMbPredModeName != "Pred_L1" {
+			for subMbPartIdx := 0; subMbPartIdx < NumSubMbPart(subMbTypeList[mbPartIdx]); subMbPartIdx++ {
+				for compIdx := 0; compIdx < 2; compIdx++ {
+					var v int
+					if s.PPS.EntropyCodingMode == 1 {
+						logger.Printf("debug: TODO ae(v) mvdL0 sub MB prediction")
+						v = 0
+					} else {
+						v = se(b.golomb())
+					}
+					if len(s.Slice.Data.MvdL0) > mbPartIdx {
+						if len(s.Slice.Data.MvdL0[mbPartIdx]) > subMbPartIdx {
+							if len(s.Slice.Data.MvdL0[mbPartIdx][subMbPartIdx]) > compIdx {
+								s.Slice.Data.MvdL0[mbPartIdx][subMbPartIdx][compIdx] = v
+							} else {
+								s.Slice.Data.MvdL0[mbPartIdx][subMbPartIdx] = append(s.Slice.Data.MvdL0[mbPartIdx][subMbPartIdx], v)
+							}
+						} else {
+							s.Slice.Data.MvdL0[mbPartIdx] = [][]int{
+								[]int{compIdx}}
+						}
+					} else {
+						s.Slice.Data.MvdL0 = [][][]int{
+							[][]int{
+								[]int{compIdx}}}
+					}
+				}
+			}
+		}
+	}
+	// 5
+	for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+		subMbTypeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], subMbTypeList[mbPartIdx])
+		subMbPredModeName := MbTypeName(sliceTypeMap[s.Slice.Header.SliceType], SubMbPred(s, b, subMbTypeName)[mbPartIdx])
+		if subMbTypeName != "B_Direct_8x8" && subMbPredModeName != "Pred_L0" {
+			for subMbPartIdx := 0; subMbPartIdx < NumSubMbPart(subMbTypeList[mbPartIdx]); subMbPartIdx++ {
+				for compIdx := 0; compIdx < 2; compIdx++ {
+					var v int
+					if s.PPS.EntropyCodingMode == 1 {
+						logger.Printf("debug: TODO ae(v) mvdL0 sub MB prediction")
+						v = 0
+					} else {
+						v = se(b.golomb())
+					}
+					if len(s.Slice.Data.MvdL1) > mbPartIdx {
+						if len(s.Slice.Data.MvdL1[mbPartIdx]) > subMbPartIdx {
+							if len(s.Slice.Data.MvdL1[mbPartIdx][subMbPartIdx]) > compIdx {
+								s.Slice.Data.MvdL1[mbPartIdx][subMbPartIdx][compIdx] = v
+							} else {
+								s.Slice.Data.MvdL1[mbPartIdx][subMbPartIdx] = append(s.Slice.Data.MvdL1[mbPartIdx][subMbPartIdx], v)
+							}
+						} else {
+							s.Slice.Data.MvdL1[mbPartIdx] = append(s.Slice.Data.MvdL1[mbPartIdx], [][]int{
+								[]int{v}}...)
+						}
+					} else {
+						s.Slice.Data.MvdL1 = append(s.Slice.Data.MvdL1, [][][]int{
+							[][]int{
+								[]int{compIdx}}}...)
+					}
+				}
+			}
+		}
+	}
+
+	return subMbTypeList
+}
+
+// table 7-17
+func SubMbPartHeight(subMbType int) int {
+	switch subMbType {
+	case 0:
+		fallthrough
+	case 2:
+		return 8
+	case 1:
+		fallthrough
+	case 3:
+		return 4
+	}
+	// na
+	return -1
+}
+
+// table 7-17
+func SubMbPartWidth(subMbType int) int {
+	switch subMbType {
+	case 0:
+		fallthrough
+	case 2:
+		return 8
+	case 1:
+		fallthrough
+	case 3:
+		return 4
+	}
+	// na
+	return -1
+}
+
+// table 7-17
+func NumSubMbPart(subMbType int) int {
+	switch subMbType {
+	case 0:
+		return 1
+	case 1:
+		fallthrough
+	case 2:
+		return 2
+	case 3:
+		return 4
+	}
+	// na
+	return -1
+}
+
+// 7.3.5.1
+// Macroblock prediction
+func MbPred(sliceContext *SliceContext, currMbAddr int, b *BitReader, rbsp []byte) {
+	logger.Printf("debug: entering macroblock prediction for currentMbAddr %d", currMbAddr)
 	var cabac *CABAC
 	sliceType := sliceTypeMap[sliceContext.Slice.Header.SliceType]
 	mbPartPredMode := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, 0)
+	x, y := InverseMBScan(
+		sliceContext,
+		MbaffFrameFlag(sliceContext.SPS, sliceContext.Header),
+		currMbAddr)
+	logger.Printf("debug: derived (%d,%d) top-left block location", x, y)
+	/*
+		// TODO: Properly derive chroma flag
+		chromaFlag := 0
+		// TODO: This doesn't account for ref_layer_dq_id
+		refLayerMbWidthC := MbWidthC(sliceContext.SPS)
+		refLayerMbHeightC := MbHeightC(sliceContext.SPS)
+		_ = refLayerMbHeightC
+		refMbW := RefMbW(chromaFlag, refLayerMbWidthC)
+		// g.6.3 - xRefMin16
+		xRefMin16 := 1
+		xOffset := XOffset(xRefMin16, refMbW)
+		xr := Xr(x, xOffset, RefMbW(chromaFlag, MbWidthC(sliceContext.SPS)))
+		xd := Xd(xr, refMbW)
+		_ = xd
+	*/
+
+	logger.Printf("debug: macroblock prediction mode %s for %s slice type", mbPartPredMode, sliceType)
 	if mbPartPredMode == "Intra_4x4" || mbPartPredMode == "Intra_8x8" || mbPartPredMode == "Intra_16x16" {
 		if mbPartPredMode == "Intra_4x4" {
 			for luma4x4BlkIdx := 0; luma4x4BlkIdx < 16; luma4x4BlkIdx++ {
+				// See 6.4.11.4
+				logger.Printf("debug: processing luma 4x4 block %d", luma4x4BlkIdx)
+				Neighbor4x4LumaBlock(luma4x4BlkIdx)
 				var v int
 				if sliceContext.PPS.EntropyCodingMode == 1 {
 					// TODO: 1 bit or ae(v)
@@ -264,7 +437,7 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) {
 						sliceContext.Slice.Data)
 					binarization.Decode(sliceContext, b, rbsp)
 
-					cabac = initCabac(binarization, sliceContext)
+					cabac = initContextVariables("PrevIntra4x4PredModeFlag", binarization, sliceContext)
 					_ = cabac
 					logger.Printf("TODO: ae for PevIntra4x4PredModeFlag[%d]\n", luma4x4BlkIdx)
 				} else {
@@ -296,6 +469,8 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) {
 		}
 		if mbPartPredMode == "Intra_8x8" {
 			for luma8x8BlkIdx := 0; luma8x8BlkIdx < 4; luma8x8BlkIdx++ {
+				// See 6.4.11.2
+				logger.Printf("debug: processing luma 8x8 block %d", luma8x8BlkIdx)
 				sliceContext.Update(sliceContext.Slice.Header, sliceContext.Slice.Data)
 				var v int
 				if sliceContext.PPS.EntropyCodingMode == 1 {
@@ -528,6 +703,7 @@ func MapUnitToSliceGroupMap(sps *SPS, pps *PPS, header *SliceHeader) []int {
 	return mapUnitToSliceGroupMap
 }
 func nextMbAddress(n int, sps *SPS, pps *PPS, header *SliceHeader) int {
+	logger.Printf("debug: Getting nextMbAddress for N %d", n)
 	i := n + 1
 	// picSizeInMbs is the number of macroblocks in picture 0
 	// 7-13
@@ -551,15 +727,6 @@ func nextMbAddress(n int, sps *SPS, pps *PPS, header *SliceHeader) int {
 	return i
 }
 
-func CurrMbAddr(sps *SPS, header *SliceHeader) int {
-	mbaffFrameFlag := 0
-	if sps.MBAdaptiveFrameField && !header.FieldPic {
-		mbaffFrameFlag = 1
-	}
-
-	return header.FirstMbInSlice * (1 * mbaffFrameFlag)
-}
-
 func MbaffFrameFlag(sps *SPS, header *SliceHeader) int {
 	if sps.MBAdaptiveFrameField && !header.FieldPic {
 		return 1
@@ -567,8 +734,10 @@ func MbaffFrameFlag(sps *SPS, header *SliceHeader) int {
 	return 0
 }
 
+// 7.3.4 - SliceData
+// Decode with 8.2
 func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
-	var cabac *CABAC
+	cabac := NewCABAC(sliceContext, b)
 	logger.Printf("debug: SliceData starts at ByteOffset: %d BitOffset %d\n", b.byteOffset, b.bitOffset)
 	logger.Printf("debug: \t== %d bytes remain ==\n", len(b.bytes)-b.byteOffset)
 	sliceContext.Slice.Data = &SliceData{BitReader: b}
@@ -579,18 +748,17 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 		return false
 	}
 	// TODO: Why is this being initialized here?
-	// initCabac(sliceContext)
+	// initContextVariables(sliceContext)
 	if sliceContext.PPS.EntropyCodingMode == 1 {
 		for !b.IsByteAligned() {
 			sliceContext.Slice.Data.CabacAlignmentOneBit = b.NextField("CabacAlignmentOneBit", 1)
 		}
 	}
-	mbaffFrameFlag := 0
-	if sliceContext.SPS.MBAdaptiveFrameField && !sliceContext.Slice.Header.FieldPic {
-		mbaffFrameFlag = 1
-	}
-	currMbAddr := sliceContext.Slice.Header.FirstMbInSlice * (1 * mbaffFrameFlag)
-
+	// 6.3
+	// Macroblock-adaptive frame field decoding flag; true indicating slices of pairs
+	mbaffFrameFlag := MbaffFrameFlag(sliceContext.SPS, sliceContext.Header)
+	sliceContext.Slice.Data.CurrMbAddr = sliceContext.Slice.Header.FirstMbInSlice * (1 * mbaffFrameFlag)
+	logger.Printf("debug: macroblock-adaptive frame field is %d", mbaffFrameFlag)
 	moreDataFlag := true
 	prevMbSkipped := 0
 	sliceContext.Slice.Data.SliceTypeName = sliceTypeMap[sliceContext.Slice.Header.SliceType]
@@ -607,7 +775,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 				}
 				for i := 0; i < sliceContext.Slice.Data.MbSkipRun; i++ {
 					// nextMbAddress(currMbAdd
-					currMbAddr = nextMbAddress(currMbAddr, sliceContext.SPS, sliceContext.PPS, sliceContext.Slice.Header)
+					sliceContext.Slice.Data.CurrMbAddr = nextMbAddress(sliceContext.Slice.Data.CurrMbAddr, sliceContext.SPS, sliceContext.PPS, sliceContext.Slice.Header)
 				}
 				if sliceContext.Slice.Data.MbSkipRun > 0 {
 					logger.Printf("debug: \tNon-I/SI: Checking for more sliceContext.Slice.Data %d:%d:%d\n", b.byteOffset, b.bitOffset, len(b.Bytes()))
@@ -620,9 +788,11 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 				moreDataFlag = !sliceContext.Slice.Data.MbSkipFlag
 			}
 		}
+		decodeFrame(sliceContext)
 		if moreDataFlag {
-			if mbaffFrameFlag == 1 && (currMbAddr%2 == 0 || (currMbAddr%2 == 1 && prevMbSkipped == 1)) {
+			if mbaffFrameFlag == 1 && (sliceContext.Slice.Data.CurrMbAddr%2 == 0 || (sliceContext.Slice.Data.CurrMbAddr%2 == 1 && prevMbSkipped == 1)) {
 				if sliceContext.PPS.EntropyCodingMode == 1 {
+					_ = cabac.GetBinarization("MbFieldDecodingFlag")
 					// TODO: ae implementation
 					binarization := NewBinarization("MbFieldDecodingFlag", sliceContext.Slice.Data)
 					binarization.Decode(sliceContext, b, b.Bytes())
@@ -633,63 +803,64 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 				}
 			}
 
-			// BEGIN: macroblockLayer()
+			// BEGIN: macroblockLayer() 7.3.5
 			if sliceContext.PPS.EntropyCodingMode == 1 {
+				logger.Printf("debug: parsing macroblock layer syntax elements")
+				binarization := cabac.GetBinarization("MBType")
 				// TODO: ae implementation
-				binarization := NewBinarization("MbType", sliceContext.Slice.Data)
-				cabac = initCabac(binarization, sliceContext)
-				_ = cabac
-				binarization.Decode(sliceContext, b, b.Bytes())
-				if binarization.PrefixSuffix {
-					logger.Printf("debug: MBType binarization has prefix and suffix\n")
-				}
-				bits := []int{}
-				for binIdx := 0; binarization.IsBinStringMatch(bits); binIdx++ {
-					newBit := b.ReadOneBit()
-					if binarization.UseDecodeBypass == 1 {
-						// DecodeBypass
-						logger.Printf("TODO: decodeBypass is set: 9.3.3.2.3")
-						codIRange, codIOffset := initDecodingEngine(sliceContext.Slice.Data.BitReader)
-						// Initialize the decoder
-						// TODO: When should the suffix of MaxBinIdxCtx be used and when just the prefix?
-						// TODO: When should the suffix of CtxIdxOffset be used?
-						arithmeticDecoder := NewArithmeticDecoding(
-							sliceContext,
-							binarization,
-							CtxIdx(
-								binarization.binIdx,
+				v := cabac.Decode(binarization)
+				sliceContext.Slice.Data.MbType = v
+				logger.Printf("debug: macroblock type is %d: %s",
+					v,
+					MbTypeName(sliceTypeMap[sliceContext.Slice.Header.SliceType], v))
+				/*
+					bits := []int{}
+
+					for binIdx := 0; binarization.IsBinStringMatch(bits); binIdx++ {
+						newBit := b.ReadOneBit()
+						if binarization.UseDecodeBypass == 1 {
+							// DecodeBypass
+							logger.Printf("TODO: decodeBypass is set: 9.3.3.2.3")
+							codIRange, codIOffset := initDecodingEngine(sliceContext.Slice.Data.BitReader)
+							// Initialize the decoder
+							// TODO: When should the suffix of MaxBinIdxCtx be used and when just the prefix?
+							// TODO: When should the suffix of CtxIdxOffset be used?
+							arithmeticDecoder := NewArithmeticDecoding(
+								sliceContext,
+								binarization,
+								CtxIdx(
+									binarization.binIdx,
+									binarization.MaxBinIdxCtx.Prefix,
+									binarization.CtxIdxOffset.Prefix,
+								),
+								codIRange,
+								codIOffset,
+							)
+							// Bypass decoding
+							codIOffset, _ = arithmeticDecoder.DecodeBypass(
+								sliceContext.Slice.Data,
+								codIRange,
+								codIOffset,
+							)
+							// End DecodeBypass
+
+						} else {
+							// DO 9.3.3.1
+							ctxIdx := CtxIdx(
+								binIdx,
 								binarization.MaxBinIdxCtx.Prefix,
-								binarization.CtxIdxOffset.Prefix,
-							),
-							codIRange,
-							codIOffset,
-						)
-						// Bypass decoding
-						codIOffset, _ = arithmeticDecoder.DecodeBypass(
-							sliceContext.Slice.Data,
-							codIRange,
-							codIOffset,
-						)
-						// End DecodeBypass
-
-					} else {
-						// DO 9.3.3.1
-						ctxIdx := CtxIdx(
-							binIdx,
-							binarization.MaxBinIdxCtx.Prefix,
-							binarization.CtxIdxOffset.Prefix)
-						if binarization.MaxBinIdxCtx.IsPrefixSuffix {
-							logger.Printf("TODO: Handle PrefixSuffix binarization\n")
+								binarization.CtxIdxOffset.Prefix)
+							if binarization.MaxBinIdxCtx.IsPrefixSuffix {
+								logger.Printf("TODO: Handle PrefixSuffix binarization\n")
+							}
+							logger.Printf("debug: MBType ctxIdx for %d is %d\n", binIdx, ctxIdx)
+							// Then 9.3.3.2
+							codIRange, codIOffset := initDecodingEngine(b)
+							logger.Printf("debug: coding engine initialized: %d/%d\n", codIRange, codIOffset)
 						}
-						logger.Printf("debug: MBType ctxIdx for %d is %d\n", binIdx, ctxIdx)
-						// Then 9.3.3.2
-						codIRange, codIOffset := initDecodingEngine(b)
-						logger.Printf("debug: coding engine initialized: %d/%d\n", codIRange, codIOffset)
+						bits = append(bits, newBit)
 					}
-					bits = append(bits, newBit)
-				}
-
-				logger.Printf("TODO: ae for MBType\n")
+				*/
 			} else {
 				sliceContext.Slice.Data.MbType = ue(b.golomb())
 			}
@@ -705,7 +876,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 						b.NextField(fmt.Sprintf("PcmSampleLuma[%d]", i), bitDepthY))
 				}
 				// 9.3.1 p 246
-				// cabac = initCabac(binarization, sliceContext)
+				// cabac = initContextVariables(binarization, sliceContext)
 				// 6-1 p 47
 				mbWidthC := 16 / SubWidthC(sliceContext.SPS)
 				mbHeightC := 16 / SubHeightC(sliceContext.SPS)
@@ -722,24 +893,25 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 						b.NextField(fmt.Sprintf("PcmSampleChroma[%d]", i), bitDepthC))
 				}
 				// 9.3.1 p 246
-				// cabac = initCabac(binarization, sliceContext)
+				// cabac = initContextVariables(binarization, sliceContext)
 
 			} else {
 				noSubMbPartSizeLessThan8x8Flag := 1
 				if sliceContext.Slice.Data.MbTypeName == "I_NxN" && MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0) != "Intra_16x16" && NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data) == 4 {
 					logger.Printf("\tTODO: subMbPred\n")
-					/*
-						subMbType := SubMbPred(sliceContext.Slice.Data.MbType)
-						for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
-							if subMbType[mbPartIdx] != "B_Direct_8x8" {
-								if NumbSubMbPart(subMbType[mbPartIdx]) > 1 {
-									noSubMbPartSizeLessThan8x8Flag = 0
-								}
-							} else if !sliceContext.SPS.Direct8x8Inference {
+					sliceContext.Slice.Data.SubMbType = SubMbPred(sliceContext, b, sliceContext.Data.MbTypeName)
+
+					for mbPartIdx := 0; mbPartIdx < 4; mbPartIdx++ {
+						subMbTypeName := MbTypeName(sliceTypeMap[sliceContext.Slice.Header.SliceType], sliceContext.Slice.Data.SubMbType[mbPartIdx])
+						if subMbTypeName != "B_Direct_8x8" {
+							if NumSubMbPart(sliceContext.Slice.Data.SubMbType[mbPartIdx]) > 1 {
 								noSubMbPartSizeLessThan8x8Flag = 0
 							}
+						} else if !sliceContext.SPS.Direct8x8Inference {
+							noSubMbPartSizeLessThan8x8Flag = 0
 						}
-					*/
+					}
+
 				} else {
 					if sliceContext.PPS.Transform8x8Mode == 1 && sliceContext.Slice.Data.MbTypeName == "I_NxN" {
 						// TODO
@@ -747,7 +919,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 						// If sliceContext.PPS.EntropyCodingMode == 1, use ae(v)
 						if sliceContext.PPS.EntropyCodingMode == 1 {
 							binarization := NewBinarization("TransformSize8x8Flag", sliceContext.Slice.Data)
-							cabac = initCabac(binarization, sliceContext)
+							cabac = initContextVariables("TransformSize8x8Flag", binarization, sliceContext)
 							binarization.Decode(sliceContext, b, b.Bytes())
 
 							logger.Println("TODO: ae(v) for TransformSize8x8Flag")
@@ -755,14 +927,14 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 							sliceContext.Slice.Data.TransformSize8x8Flag = flagField()
 						}
 					}
-					MbPred(sliceContext, b, b.Bytes())
+					MbPred(sliceContext, sliceContext.Slice.Data.CurrMbAddr, b, b.Bytes())
 				}
 				if MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0) != "Intra_16x16" {
 					// TODO: me, ae
 					logger.Printf("TODO: CodedBlockPattern pending me/ae implementation\n")
 					if sliceContext.PPS.EntropyCodingMode == 1 {
 						binarization := NewBinarization("CodedBlockPattern", sliceContext.Slice.Data)
-						cabac = initCabac(binarization, sliceContext)
+						cabac = initContextVariables("CodedBlockPattern", binarization, sliceContext)
 						binarization.Decode(sliceContext, b, b.Bytes())
 
 						logger.Printf("TODO: ae for CodedBlockPattern\n")
@@ -778,7 +950,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 						// TODO: 1 bit or ae(v)
 						if sliceContext.PPS.EntropyCodingMode == 1 {
 							binarization := NewBinarization("Transform8x8Flag", sliceContext.Slice.Data)
-							cabac = initCabac(binarization, sliceContext)
+							cabac = initContextVariables("Transform8x8Flag", binarization, sliceContext)
 							binarization.Decode(sliceContext, b, b.Bytes())
 
 							logger.Printf("TODO: ae for TranformSize8x8Flag\n")
@@ -791,7 +963,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 					// TODO: se or ae(v)
 					if sliceContext.PPS.EntropyCodingMode == 1 {
 						binarization := NewBinarization("MbQpDelta", sliceContext.Slice.Data)
-						cabac = initCabac(binarization, sliceContext)
+						cabac = initContextVariables("MbQpDelta", binarization, sliceContext)
 						binarization.Decode(sliceContext, b, b.Bytes())
 
 						logger.Printf("TODO: ae for MbQpDelta\n")
@@ -801,7 +973,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 
 				}
 			}
-
+			logger.Printf("debug: finished parsing macroblock layer syntax elements")
 		} // END MacroblockLayer
 		if sliceContext.PPS.EntropyCodingMode == 0 {
 			logger.Printf("debug: \tNon-I/SI: Again Checking for more sliceContext.Slice.Data %d:%d:%d\n", b.byteOffset, b.bitOffset, len(b.Bytes()))
@@ -814,8 +986,8 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 					prevMbSkipped = 0
 				}
 			}
-			if mbaffFrameFlag == 1 && currMbAddr%2 == 0 {
-				logger.Printf("debug: \tNon-I/SI: More sliceContext.Slice.Data at currMbAddr[%v] sliceContext.Slice.Data %d:%d:%d\n", currMbAddr, b.byteOffset, b.bitOffset, len(b.Bytes()))
+			if mbaffFrameFlag == 1 && sliceContext.Slice.Data.CurrMbAddr%2 == 0 {
+				logger.Printf("debug: \tNon-I/SI: More sliceContext.Slice.Data at currMbAddr[%v] sliceContext.Slice.Data %d:%d:%d\n", sliceContext.Slice.Data.CurrMbAddr, b.byteOffset, b.bitOffset, len(b.Bytes()))
 				moreDataFlag = true
 			} else {
 				// TODO: ae implementation
@@ -824,7 +996,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) *SliceData {
 				moreDataFlag = !sliceContext.Slice.Data.EndOfSliceFlag
 			}
 		}
-		currMbAddr = nextMbAddress(currMbAddr, sliceContext.SPS, sliceContext.PPS, sliceContext.Slice.Header)
+		sliceContext.Slice.Data.CurrMbAddr = nextMbAddress(sliceContext.Slice.Data.CurrMbAddr, sliceContext.SPS, sliceContext.PPS, sliceContext.Slice.Header)
 	} // END while moreDataFlag
 	return sliceContext.Slice.Data
 }
@@ -835,18 +1007,24 @@ func (c *SliceContext) Update(header *SliceHeader, data *SliceData) {
 func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, showPacket bool) *SliceContext {
 	sps := videoStream.SPS
 	pps := videoStream.PPS
-	logger.Printf("debug: %s RBSP %d bytes %d bits == \n", NALUnitType[nalUnit.Type], len(rbsp), len(rbsp)*8)
+	logger.Printf("debug: (%d)%s RBSP %d bytes %d bits == \n", nalUnit.Type, NALUnitType[nalUnit.Type], len(rbsp), len(rbsp)*8)
 	logger.Printf("debug: \t%#v\n", rbsp[0:8])
-	var idrPic bool
-	if nalUnit.Type == 5 {
-		idrPic = true
+	if nalUnit.NoInterLayerPredFlag == 0 {
+		// g.6.2
+		logger.Printf("debug: no inter layer prediction flag is off\n")
 	}
+	idrPic := nalUnit.Type == 5
 	header := SliceHeader{}
 	if sps.UseSeparateColorPlane {
+		// 6.3
+		logger.Printf("debug: using separate color planes; three slices per picture")
 		header.ChromaArrayType = 0
 	} else {
+		// 6.3
+		logger.Printf("debug: not using separate color plane; one macroblock per slice")
 		header.ChromaArrayType = sps.ChromaFormat
 	}
+	logger.Printf("debug: chroma array type is %d\n", header.ChromaArrayType)
 	b := &BitReader{bytes: rbsp}
 	flagField := func() bool {
 		if v := b.NextField("", 1); v == 1 {
@@ -857,6 +1035,10 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	header.FirstMbInSlice = ue(b.golomb())
 	header.SliceType = ue(b.golomb())
 	sliceType := sliceTypeMap[header.SliceType]
+	if sliceType == "B" {
+		logger.Printf("error: B slices are unsupported. Dropping frame")
+		goto DropFrame
+	}
 	logger.Printf("debug: %s (%s) slice of %d bytes\n", NALUnitType[nalUnit.Type], sliceType, len(rbsp))
 	header.PPSID = ue(b.golomb())
 	if sps.UseSeparateColorPlane {
@@ -872,7 +1054,10 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	}
 	if idrPic {
 		header.IDRPicID = ue(b.golomb())
+		logger.Printf("debug: decoding IDR pic %d with pic order count type %d",
+			header.IDRPicID, sps.PicOrderCountType)
 	}
+
 	if sps.PicOrderCountType == 0 {
 		header.PicOrderCntLsb = b.NextField("PicOrderCntLsb", sps.Log2MaxPicOrderCntLSBMin4+4)
 		if pps.BottomFieldPicOrderInFramePresent && !header.FieldPic {
@@ -1030,7 +1215,7 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 			"SliceGroupChangeCycle",
 			int(math.Ceil(math.Log2(float64(pps.PicSizeInMapUnitsMinus1/pps.SliceGroupChangeRateMinus1+1)))))
 	}
-
+DropFrame:
 	sliceContext := &SliceContext{
 		NalUnit: nalUnit,
 		SPS:     sps,
@@ -1040,6 +1225,7 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 		},
 	}
 	sliceContext.Slice.Data = NewSliceData(sliceContext, b)
+	// TODO: Decode slice data using 8.2
 	if showPacket {
 		debugPacket("debug: Header", sliceContext.Slice.Header)
 		debugPacket("debug: Data", sliceContext.Slice.Data)

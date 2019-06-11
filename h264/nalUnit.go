@@ -29,6 +29,11 @@ type NalUnit struct {
 	rbsp                         []byte
 }
 
+const (
+	CODED_IDR_SLICE = 5
+	IDR_PICTURE     = 5 // Matching ITU rec convention
+)
+
 func isEmulationPreventionThreeByte(b []byte) bool {
 	if len(b) != 3 {
 		return false
@@ -124,8 +129,14 @@ func NewNalUnit(frame []byte, numBytesInNal int) *NalUnit {
 			}
 		}
 	}
+	if nalUnit.RefIdc != 0 {
+		logger.Printf("debug: Decoding reference picture")
+	}
 
 	// nalUnit.rbsp = frame[nalUnit.HeaderBytes:]
-	logger.Printf("info: decoded %s NAL with %d RBSP bytes\n", NALUnitType[nalUnit.Type], len(nalUnit.rbsp))
+	logger.Printf("info: decoded [%d] %s NAL with %d RBSP bytes\n",
+		nalUnit.Type,
+		NALUnitType[nalUnit.Type],
+		len(nalUnit.rbsp))
 	return &nalUnit
 }
