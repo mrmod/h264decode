@@ -1,3 +1,5 @@
+[![Go Report Card](https://goreportcard.com/badge/github.com/ausocean/h264decode)](https://goreportcard.com/report/github.com/ausocean/h264decode)
+
 Listens for a stream of H264 bytes on port 8000.
 
 A stream is read sequentially dropping each NAL into a struct with access to the RBSP and seekable features. No interface contracts are implemented right now. This is heavily a work in progress.
