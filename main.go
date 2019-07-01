@@ -1,8 +1,11 @@
 package main
 
-import "github.com/saxon-milton/h264decode/h264"
-import "net"
-import "fmt"
+import (
+	"fmt"
+	"net"
+
+	"github.com/ausocean/h264decode/h264"
+)
 
 func main() {
 	port := "8000"
