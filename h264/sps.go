@@ -538,8 +538,8 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 
 			sps.MaxBitsPerMbDenom, err = readUe(nil)
 			if err != nil {
+				return nil, errors.Wrap(err, "could not parse MaxBitsPerMbDenom")
 			}
-			return nil, errors.Wrap(err, "could not parse MaxBitsPerMbDenom")
 
 			sps.Log2MaxMvLengthHorizontal, err = readUe(nil)
 			if err != nil {
