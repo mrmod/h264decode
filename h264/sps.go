@@ -1,7 +1,11 @@
 package h264
 
-import "fmt"
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/pkg/errors"
+)
 
 // Specification Page 43 7.3.2.1.1
 // Range is always inclusive
@@ -169,12 +173,15 @@ func debugPacket(name string, packet interface{}) {
 		logger.Printf("debug: \t%#v\n", line)
 	}
 }
-func scalingList(b *BitReader, scalingList []int, sizeOfScalingList int, defaultScalingMatrix []int) {
+func scalingList(b *BitReader, scalingList []int, sizeOfScalingList int, defaultScalingMatrix []int) error {
 	lastScale := 8
 	nextScale := 8
 	for i := 0; i < sizeOfScalingList; i++ {
 		if nextScale != 0 {
-			deltaScale := se(b.golomb())
+			deltaScale, err := readSe(nil)
+			if err != nil {
+				return errors.Wrap(err, "could not parse deltaScale")
+			}
 			nextScale = (lastScale + deltaScale + 256) % 256
 			if i == 0 && nextScale == 0 {
 				// Scaling list should use the default list for this point in the matrix
@@ -188,20 +195,36 @@ func scalingList(b *BitReader, scalingList []int, sizeOfScalingList int, default
 		}
 		lastScale = scalingList[i]
 	}
+	return nil
 }
-func NewSPS(rbsp []byte, showPacket bool) *SPS {
+func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 	logger.Printf("debug: SPS RBSP %d bytes %d bits\n", len(rbsp), len(rbsp)*8)
 	logger.Printf("debug: \t%#v\n", rbsp[0:8])
 	sps := SPS{}
 	b := &BitReader{bytes: rbsp}
-	hrdParameters := func() {
-		sps.CpbCntMinus1 = ue(b.golomb())
+	var err error
+	hrdParameters := func() error {
+		sps.CpbCntMinus1, err = readUe(nil)
+		if err != nil {
+			return errors.Wrap(err, "could not parse CpbCntMinus1")
+		}
+
 		sps.BitRateScale = b.NextField("BitRateScale", 4)
 		sps.CpbSizeScale = b.NextField("CPBSizeScale", 4)
 		// SchedSelIdx E1.2
 		for sseli := 0; sseli <= sps.CpbCntMinus1; sseli++ {
-			sps.BitRateValueMinus1 = append(sps.BitRateValueMinus1, ue(b.golomb()))
-			sps.CpbSizeValueMinus1 = append(sps.CpbSizeValueMinus1, ue(b.golomb()))
+			ue, err := readUe(nil)
+			if err != nil {
+				return errors.Wrap(err, "could not parse BitRateValueMinus1")
+			}
+			sps.BitRateValueMinus1 = append(sps.BitRateValueMinus1, ue)
+
+			ue, err = readUe(nil)
+			if err != nil {
+				return errors.Wrap(err, "could not parse CpbSizeValueMinus1")
+			}
+			sps.CpbSizeValueMinus1 = append(sps.CpbSizeValueMinus1, ue)
+
 			if v := b.NextField(fmt.Sprintf("CBR[%d]", sseli), 1); v == 1 {
 				sps.Cbr = append(sps.Cbr, true)
 			} else {
@@ -213,7 +236,9 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 			sps.DpbOutputDelayLengthMinus1 = b.NextField("DpbOutputDelayLengthMinus1", 5)
 			sps.TimeOffsetLength = b.NextField("TimeOffsetLength", 5)
 		}
+		return nil
 	}
+
 	sps.Profile = b.NextField("ProfileIDC", 8)
 	sps.Constraint0 = b.NextField("Constraint0", 1)
 	sps.Constraint1 = b.NextField("Constraint1", 1)
@@ -224,8 +249,16 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	_ = b.NextField("ReservedZeroBits", 2)
 	sps.Level = b.NextField("LevelIDC", 8)
 	// sps.ID = b.NextField("SPSID", 6) // proper
-	sps.ID = ue(b.golomb())
-	sps.ChromaFormat = ue(b.golomb())
+	sps.ID, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse ID")
+	}
+
+	sps.ChromaFormat, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse ChromaFormat")
+	}
+
 	// This should be done only for certain ProfileIDC:
 	isProfileIDC := []int{100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135}
 	// SpecialProfileCase1
@@ -238,8 +271,16 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 			}
 		}
 
-		sps.BitDepthLumaMinus8 = ue(b.golomb())
-		sps.BitDepthChromaMinus8 = ue(b.golomb())
+		sps.BitDepthLumaMinus8, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse BitDepthLumaMinus8")
+		}
+
+		sps.BitDepthChromaMinus8, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse BitDepthChromaMinus8")
+		}
+
 		if v := b.NextField("QPrimeYZeroTransformBypassFlag", 1); v == 1 {
 			sps.QPrimeYZeroTransformBypass = true
 		} else {
@@ -286,33 +327,74 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	// showSPS()
 	// return sps
 	// Possibly wrong due to no scaling list being built
-	sps.Log2MaxFrameNumMinus4 = ue(b.golomb())
-	sps.PicOrderCountType = ue(b.golomb())
+	sps.Log2MaxFrameNumMinus4, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse Log2MaxFrameNumMinus4")
+	}
+
+	sps.PicOrderCountType, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse PicOrderCountType")
+	}
+
 	if sps.PicOrderCountType == 0 {
-		sps.Log2MaxPicOrderCntLSBMin4 = ue(b.golomb())
+		sps.Log2MaxPicOrderCntLSBMin4, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse Log2MaxPicOrderCntLSBMin4")
+		}
 	} else if sps.PicOrderCountType == 1 {
 		if v := b.NextField("DeltaPicOrderAlwaysZeroFlag", 1); v == 1 {
 			sps.DeltaPicOrderAlwaysZero = true
 		} else {
 			sps.DeltaPicOrderAlwaysZero = false
 		}
-		sps.OffsetForNonRefPic = se(b.golomb())
-		sps.OffsetForTopToBottomField = se(b.golomb())
-		sps.NumRefFramesInPicOrderCntCycle = ue(b.golomb())
+
+		sps.OffsetForNonRefPic, err = readSe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse OffsetForNonRefPic")
+		}
+
+		sps.OffsetForTopToBottomField, err = readSe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse OffsetForTopToBottomField")
+		}
+
+		sps.NumRefFramesInPicOrderCntCycle, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse NumRefFramesInPicOrderCntCycle")
+		}
 
 		for i := 0; i < sps.NumRefFramesInPicOrderCntCycle; i++ {
+			se, err := readSe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse OffsetForRefFrameList")
+			}
 			sps.OffsetForRefFrameList = append(
 				sps.OffsetForRefFrameList,
-				se(b.golomb()))
+				se)
 		}
 
 	}
-	sps.MaxNumRefFrames = ue(b.golomb())
+
+	sps.MaxNumRefFrames, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse MaxNumRefFrames")
+	}
+
 	if v := b.NextField("GapsInFrameNumValueAllowedFlag", 1); v == 1 {
 		sps.GapsInFrameNumValueAllowed = true
 	}
-	sps.PicWidthInMbsMinus1 = ue(b.golomb())
-	sps.PicHeightInMapUnitsMinus1 = ue(b.golomb())
+
+	sps.PicWidthInMbsMinus1, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse PicWidthInMbsMinus1")
+	}
+
+	sps.PicHeightInMapUnitsMinus1, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse PicHeightInMapUnitsMinus1")
+	}
+
 	if v := b.NextField("FrameMbsOnlyFlag", 1); v == 1 {
 		sps.FrameMbsOnly = true
 	}
@@ -328,10 +410,25 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 		sps.FrameCropping = true
 	}
 	if sps.FrameCropping {
-		sps.FrameCropLeftOffset = ue(b.golomb())
-		sps.FrameCropRightOffset = ue(b.golomb())
-		sps.FrameCropTopOffset = ue(b.golomb())
-		sps.FrameCropBottomOffset = ue(b.golomb())
+		sps.FrameCropLeftOffset, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse FrameCropLeftOffset")
+		}
+
+		sps.FrameCropRightOffset, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse FrameCropRightOffset")
+		}
+
+		sps.FrameCropTopOffset, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse FrameCropTopOffset")
+		}
+
+		sps.FrameCropBottomOffset, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse FrameCropBottomOffset")
+		}
 	}
 	if v := b.NextField("VUIParametersPresentFlag", 1); v == 1 {
 		sps.VuiParametersPresent = true
@@ -380,8 +477,15 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 			sps.ChromaLocInfoPresent = true
 		}
 		if sps.ChromaLocInfoPresent {
-			sps.ChromaSampleLocTypeTopField = ue(b.golomb())
-			sps.ChromaSampleLocTypeBottomField = ue(b.golomb())
+			sps.ChromaSampleLocTypeTopField, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse ChromaSampleLocTypeTopField")
+			}
+
+			sps.ChromaSampleLocTypeBottomField, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse ChromaSampleLocTypeBottomField")
+			}
 		}
 
 		if v := b.NextField("TimingInfoPresentFlag", 1); v == 1 {
@@ -398,13 +502,19 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 			sps.NalHrdParametersPresent = true
 		}
 		if sps.NalHrdParametersPresent {
-			hrdParameters()
+			err = hrdParameters()
+			if err != nil {
+				return nil, errors.Wrap(err, "could not get hrdParameters")
+			}
 		}
 		if v := b.NextField("VCLHRDParametersPresent", 1); v == 1 {
 			sps.VclHrdParametersPresent = true
 		}
 		if sps.VclHrdParametersPresent {
-			hrdParameters()
+			err = hrdParameters()
+			if err != nil {
+				return nil, errors.Wrap(err, "could not get hrdParameters")
+			}
 		}
 		if sps.NalHrdParametersPresent || sps.VclHrdParametersPresent {
 			if v := b.NextField("LowHRDDelayFlag", 1); v == 1 {
@@ -421,17 +531,40 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 			if v := b.NextField("MotionVectorsOverPicBoundaries", 1); v == 1 {
 				sps.MotionVectorsOverPicBoundaries = true
 			}
-			sps.MaxBytesPerPicDenom = ue(b.golomb())
-			sps.MaxBitsPerMbDenom = ue(b.golomb())
-			sps.Log2MaxMvLengthHorizontal = ue(b.golomb())
-			sps.Log2MaxMvLengthVertical = ue(b.golomb())
-			sps.MaxNumReorderFrames = ue(b.golomb())
-			sps.MaxDecFrameBuffering = ue(b.golomb())
+			sps.MaxBytesPerPicDenom, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse MaxBytesPerPicDenom")
+			}
+
+			sps.MaxBitsPerMbDenom, err = readUe(nil)
+			if err != nil {
+			}
+			return nil, errors.Wrap(err, "could not parse MaxBitsPerMbDenom")
+
+			sps.Log2MaxMvLengthHorizontal, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse Log2MaxMvLengthHorizontal")
+			}
+
+			sps.Log2MaxMvLengthVertical, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse Log2MaxMvLengthVertical")
+			}
+
+			sps.MaxNumReorderFrames, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse MaxNumReorderFrames")
+			}
+
+			sps.MaxDecFrameBuffering, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse MaxDecFrameBuffering")
+			}
 		}
 
 	} // End VuiParameters Annex E.1.1
 	if showPacket {
 		debugPacket("SPS", sps)
 	}
-	return &sps
+	return &sps, nil
 }

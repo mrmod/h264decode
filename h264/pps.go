@@ -1,7 +1,11 @@
 package h264
 
-import "fmt"
-import "math"
+import (
+	"fmt"
+	"math"
+
+	"github.com/pkg/errors"
+)
 
 // import "strings"
 
@@ -37,7 +41,7 @@ type PPS struct {
 	SecondChromaQpIndexOffset         int
 }
 
-func NewPPS(sps *SPS, rbsp []byte, showPacket bool) *PPS {
+func NewPPS(sps *SPS, rbsp []byte, showPacket bool) (*PPS, error) {
 	logger.Printf("debug: PPS RBSP %d bytes %d bits == \n", len(rbsp), len(rbsp)*8)
 	logger.Printf("debug: \t%#v\n", rbsp[0:8])
 	pps := PPS{}
@@ -49,27 +53,63 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) *PPS {
 		return false
 	}
 
-	pps.ID = ue(b.golomb())
-	pps.SPSID = ue(b.golomb())
+	var err error
+	pps.ID, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse ID")
+	}
+
+	pps.SPSID, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse SPS ID")
+	}
+
 	pps.EntropyCodingMode = b.NextField("EntropyCodingModeFlag", 1)
 	pps.BottomFieldPicOrderInFramePresent = flagField()
-	pps.NumSliceGroupsMinus1 = ue(b.golomb())
+
+	pps.NumSliceGroupsMinus1, err = readUe(nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not parse NumSliceGroupsMinus1")
+	}
+
 	if pps.NumSliceGroupsMinus1 > 0 {
-		pps.SliceGroupMapType = ue(b.golomb())
+		pps.SliceGroupMapType, err = readUe(nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not parse SliceGroupMapType")
+		}
+
 		if pps.SliceGroupMapType == 0 {
 			for iGroup := 0; iGroup <= pps.NumSliceGroupsMinus1; iGroup++ {
-				pps.RunLengthMinus1[iGroup] = ue(b.golomb())
+				pps.RunLengthMinus1[iGroup], err = readUe(nil)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not parse RunLengthMinus1")
+				}
 			}
 		} else if pps.SliceGroupMapType == 2 {
 			for iGroup := 0; iGroup < pps.NumSliceGroupsMinus1; iGroup++ {
-				pps.TopLeft[iGroup] = ue(b.golomb())
-				pps.BottomRight[iGroup] = ue(b.golomb())
+				pps.TopLeft[iGroup], _ = readUe(nil)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not parse TopLeft[iGroup]")
+				}
+
+				pps.BottomRight[iGroup], err = readUe(nil)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not parse BottomRight[iGroup]")
+				}
 			}
 		} else if pps.SliceGroupMapType > 2 && pps.SliceGroupMapType < 6 {
 			pps.SliceGroupChangeDirection = flagField()
-			pps.SliceGroupChangeRateMinus1 = ue(b.golomb())
+
+			pps.SliceGroupChangeRateMinus1, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse SliceGroupChangeRateMinus1")
+			}
 		} else if pps.SliceGroupMapType == 6 {
-			pps.PicSizeInMapUnitsMinus1 = ue(b.golomb())
+			pps.PicSizeInMapUnitsMinus1, err = readUe(nil)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not parse PicSizeInMapUnitsMinus1")
+			}
+
 			for i := 0; i <= pps.PicSizeInMapUnitsMinus1; i++ {
 				pps.SliceGroupId[i] = b.NextField(
 					fmt.Sprintf("SliceGroupId[%d]", i),
@@ -78,13 +118,33 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) *PPS {
 		}
 
 	}
-	pps.NumRefIdxL0DefaultActiveMinus1 = ue(b.golomb())
-	pps.NumRefIdxL1DefaultActiveMinus1 = ue(b.golomb())
+	pps.NumRefIdxL0DefaultActiveMinus1, err = readUe(nil)
+	if err != nil {
+		return nil, errors.New("could not parse NumRefIdxL0DefaultActiveMinus1")
+	}
+
+	pps.NumRefIdxL1DefaultActiveMinus1, err = readUe(nil)
+	if err != nil {
+		return nil, errors.New("could not parse NumRefIdxL1DefaultActiveMinus1")
+	}
+
 	pps.WeightedPred = flagField()
 	pps.WeightedBipred = b.NextField("WeightedBipredIDC", 2)
-	pps.PicInitQpMinus26 = se(b.golomb())
-	pps.PicInitQsMinus26 = se(b.golomb())
-	pps.ChromaQpIndexOffset = se(b.golomb())
+	pps.PicInitQpMinus26, err = readSe(nil)
+	if err != nil {
+		return nil, errors.New("could not parse PicInitQpMinus26")
+	}
+
+	pps.PicInitQsMinus26, err = readSe(nil)
+	if err != nil {
+		return nil, errors.New("could not parse PicInitQsMinus26")
+	}
+
+	pps.ChromaQpIndexOffset, err = readSe(nil)
+	if err != nil {
+		return nil, errors.New("could not parse ChromaQpIndexOffset")
+	}
+
 	pps.DeblockingFilterControlPresent = flagField()
 	pps.ConstrainedIntraPred = flagField()
 	pps.RedundantPicCntPresent = flagField()
@@ -119,7 +179,10 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) *PPS {
 					}
 				}
 			}
-			pps.SecondChromaQpIndexOffset = se(b.golomb())
+			pps.SecondChromaQpIndexOffset, err = readSe(nil)
+			if err != nil {
+				return nil, errors.New("could not parse SecondChromaQpIndexOffset")
+			}
 		}
 		b.MoreRBSPData()
 		// rbspTrailingBits()
@@ -128,6 +191,6 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) *PPS {
 	if showPacket {
 		debugPacket("PPS", pps)
 	}
-	return &pps
+	return &pps, nil
 
 }

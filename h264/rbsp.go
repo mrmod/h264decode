@@ -28,14 +28,14 @@ var (
 func rbspTrailingBits(b *BitReader) {
 	rbspStopOneBit := make([]int, 1)
 	if _, err := b.Read(rbspStopOneBit); err != nil {
-		fmt.Println("error reading StopOneBit: %v\n", err)
+		fmt.Printf("error reading StopOneBit: %v\n", err)
 	}
 	// 7.2
 	for !b.IsByteAligned() {
 		// RBSPAlignmentZeroBit
 		rbspAlignmentZeroBit := make([]int, 1)
 		if _, err := b.Read(rbspAlignmentZeroBit); err != nil {
-			fmt.Println("error reading AligntmentZeroBit: %v\n", err)
+			fmt.Printf("error reading AligntmentZeroBit: %v\n", err)
 			break
 		}
 	}

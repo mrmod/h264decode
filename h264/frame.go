@@ -1,7 +1,5 @@
 package h264
 
-import "github.com/mrmod/degolomb"
-
 const (
 	NALU_TYPE_UNSPECIFIED = iota
 	NALU_TYPE_SLICE_NON_IDR_PICTURE
@@ -81,17 +79,6 @@ var (
 		4: "anything",
 	}
 )
-
-// A Frame starts with [00, 00, 00, 01, 67]
-// The 4th byte is the NAL header ie: 67
-func nalRefIDC(frame []byte) int {
-	return degolomb.Degolomb(frame[4], []int{1, 2, 5})[1]
-}
-
-// The 4th byte is divided into 3 Exp Golomb coded bit fields
-func nalUnitType(frame []byte) int {
-	return degolomb.Degolomb(frame[4], []int{1, 2, 5})[2]
-}
 
 func rbspBytes(frame []byte) []byte {
 	if len(frame) > 8 {

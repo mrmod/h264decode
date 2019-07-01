@@ -1,6 +1,6 @@
 package main
 
-import "github.com/mrmod/cvnightlife/h264"
+import "github.com/saxon-milton/h264decode/h264"
 import "net"
 import "fmt"
 
