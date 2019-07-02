@@ -30,14 +30,14 @@ func YOffset(yRefMin16, refMbH int) int {
 }
 func MbWidthC(sps *SPS) int {
 	mbWidthC := 16 / SubWidthC(sps)
-	if sps.ChromaFormat == 0 || sps.UseSeparateColorPlane {
+	if sps.ChromaFormat == chromaMonochrome || sps.UseSeparateColorPlane {
 		mbWidthC = 0
 	}
 	return mbWidthC
 }
 func MbHeightC(sps *SPS) int {
 	mbHeightC := 16 / SubHeightC(sps)
-	if sps.ChromaFormat == 0 || sps.UseSeparateColorPlane {
+	if sps.ChromaFormat == chromaMonochrome || sps.UseSeparateColorPlane {
 		mbHeightC = 0
 	}
 	return mbHeightC
