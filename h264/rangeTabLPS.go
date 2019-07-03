@@ -8,7 +8,9 @@ const (
 	rangeTabLPSRows    = 64
 )
 
-// rangeTabLPS is defined in section 9.3.3.2.1.1, tab 9-44.
+// rangeTabLPS provides values of codIRangeLPS as defined in section 9.3.3.2.1.1,
+// tab 9-44. Rows correspond to pStateIdx, and columns to qCodIRangeIdx, i.e.
+// codIRangeLPS = rangeTabLPS[pStateIdx][qCodIRangeIdx].
 var rangeTabLPS = [rangeTabLPSRows][rangeTabLPSColumns]int{
 	{128, 176, 208, 240},
 	{128, 167, 197, 227},
