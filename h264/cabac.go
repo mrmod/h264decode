@@ -1,5 +1,7 @@
 package h264
 
+import "github.com/pkg/errors"
+
 const (
 	NaCtxId            = 10000
 	NA_SUFFIX          = -1
@@ -518,13 +520,16 @@ type ArithmeticDecoding struct {
 
 // 9.3.3.2.1
 // returns: binVal, updated codIRange, updated codIOffset
-func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (int, int, int) {
+func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (int, int, int, error) {
 	var binVal int
 	cabac := initCabac(a.Binarization, a.Context)
 	// Derivce codIRangeLPS
 	qCodIRangeIdx := (codIRange >> 6) & 3
 	pStateIdx := cabac.PStateIdx
-	codIRangeLPS := rangeTabLPS[pStateIdx][qCodIRangeIdx]
+	codIRangeLPS, err := retCodIRangeLPS(pStateIdx, qCodIRangeIdx)
+	if err != nil {
+		return 0, 0, 0, errors.Wrap(err, "could not get codIRangeLPS from retCodIRangeLPS")
+	}
 
 	codIRange = codIRange - codIRangeLPS
 	if codIOffset >= codIRange {
@@ -536,7 +541,7 @@ func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (i
 	}
 
 	// TODO: Do StateTransition and then RenormD happen here? See: 9.3.3.2.1
-	return binVal, codIRange, codIOffset
+	return binVal, codIRange, codIOffset, nil
 }
 
 // 9.3.3.2.1.1
