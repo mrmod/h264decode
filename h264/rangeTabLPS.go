@@ -82,11 +82,11 @@ var rangeTabLPS = [rangeTabLPSRows][rangeTabLPSColumns]int{
 // qCodIRangeIdx using the rangeTabLPS as specified in section 9.3.3.2.1.1,
 // tab 9-44.
 func retCodIRangeLPS(pStateIdx, qCodIRangeIdx int) (int, error) {
-	if 0 > pStateIdx || pStateIdx >= rangeTabLPSRows {
+	if pStateIdx < 0 || rangeTabLPSRows <= pStateIdx {
 		return 0, errors.New("invalid pStateIdx")
 	}
 
-	if 0 > qCodIRangeIdx || qCodIRangeIdx >= rangeTabLPSColumns {
+	if qCodIRangeIdx < 0 || rangeTabLPSColumns <= qCodIRangeIdx {
 		return 0, errors.New("invalid qCodIRangeIdx")
 	}
 
