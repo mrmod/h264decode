@@ -76,7 +76,7 @@ var rangeTabLPS = [rangeTabLPSRows][rangeTabLPSColumns]int{
 	{2, 2, 2, 2},
 }
 
-// retCodIRangeLPS retreives the codIRangeLPS for a given pStateIdx and
+// retCodIRangeLPS retrieves the codIRangeLPS for a given pStateIdx and
 // qCodIRangeIdx using the rangeTabLPS as specified in section 9.3.3.2.1.1,
 // tab 9-44.
 func retCodIRangeLPS(pStateIdx, qCodIRangeIdx int) (int, error) {
