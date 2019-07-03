@@ -78,16 +78,22 @@ var rangeTabLPS = [rangeTabLPSRows][rangeTabLPSColumns]int{
 	63: {2, 2, 2, 2},
 }
 
+// Errors returnable by retCodIRangeLPS.
+var (
+	errPStateIdx     = errors.New("invalid pStateIdx")
+	errQCodIRangeIdx = errors.New("invalid qCodIRangeIdx")
+)
+
 // retCodIRangeLPS retrieves the codIRangeLPS for a given pStateIdx and
 // qCodIRangeIdx using the rangeTabLPS as specified in section 9.3.3.2.1.1,
 // tab 9-44.
 func retCodIRangeLPS(pStateIdx, qCodIRangeIdx int) (int, error) {
 	if pStateIdx < 0 || rangeTabLPSRows <= pStateIdx {
-		return 0, errors.New("invalid pStateIdx")
+		return 0, errPStateIdx
 	}
 
 	if qCodIRangeIdx < 0 || rangeTabLPSColumns <= qCodIRangeIdx {
-		return 0, errors.New("invalid qCodIRangeIdx")
+		return 0, errQCodIRangeIdx
 	}
 
 	return rangeTabLPS[pStateIdx][qCodIRangeIdx], nil
