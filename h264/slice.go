@@ -7,6 +7,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Chroma formats as defined in section 6.2, tab 6-1.
+const (
+	chromaMonochrome = iota
+	chroma420
+	chroma422
+	chroma444
+)
+
 type VideoStream struct {
 	SPS    *SPS
 	PPS    *PPS
@@ -181,19 +189,19 @@ func PicSizeInMbs(sps *SPS, header *SliceHeader) int {
 func SubWidthC(sps *SPS) int {
 	n := 17
 	if sps.UseSeparateColorPlane {
-		if sps.ChromaFormat == 3 {
+		if sps.ChromaFormat == chroma444 {
 			return n
 		}
 	}
 
 	switch sps.ChromaFormat {
-	case 0:
+	case chromaMonochrome:
 		return n
-	case 1:
+	case chroma420:
 		n = 2
-	case 2:
+	case chroma422:
 		n = 2
-	case 3:
+	case chroma444:
 		n = 1
 
 	}
@@ -202,18 +210,18 @@ func SubWidthC(sps *SPS) int {
 func SubHeightC(sps *SPS) int {
 	n := 17
 	if sps.UseSeparateColorPlane {
-		if sps.ChromaFormat == 3 {
+		if sps.ChromaFormat == chroma444 {
 			return n
 		}
 	}
 	switch sps.ChromaFormat {
-	case 0:
+	case chromaMonochrome:
 		return n
-	case 1:
+	case chroma420:
 		n = 2
-	case 2:
+	case chroma422:
 		n = 1
-	case 3:
+	case chroma444:
 		n = 1
 
 	}
@@ -724,7 +732,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) 
 				mbWidthC := 16 / SubWidthC(sliceContext.SPS)
 				mbHeightC := 16 / SubHeightC(sliceContext.SPS)
 				// if monochrome
-				if sliceContext.SPS.ChromaFormat == 0 || sliceContext.SPS.UseSeparateColorPlane {
+				if sliceContext.SPS.ChromaFormat == chromaMonochrome || sliceContext.SPS.UseSeparateColorPlane {
 					mbWidthC = 0
 					mbHeightC = 0
 				}

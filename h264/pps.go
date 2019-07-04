@@ -156,7 +156,7 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) (*PPS, error) {
 		pps.PicScalingMatrixPresent = flagField()
 		if pps.PicScalingMatrixPresent {
 			v := 6
-			if sps.ChromaFormat != 3 {
+			if sps.ChromaFormat != chroma444 {
 				v = 2
 			}
 			for i := 0; i < 6+(v*pps.Transform8x8Mode); i++ {

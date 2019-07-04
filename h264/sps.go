@@ -263,7 +263,7 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 	isProfileIDC := []int{100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135}
 	// SpecialProfileCase1
 	if isInList(isProfileIDC, sps.Profile) {
-		if sps.ChromaFormat == 3 {
+		if sps.ChromaFormat == chroma444 {
 			if v := b.NextField("SeperateColorPlaneFlag", 1); v == 1 {
 				sps.UseSeparateColorPlane = true
 			} else {
@@ -293,7 +293,7 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 		}
 		if sps.SeqScalingMatrixPresent {
 			max := 12
-			if sps.ChromaFormat != 3 {
+			if sps.ChromaFormat != chroma444 {
 				max = 8
 			}
 			logger.Printf("debug: \tbuilding Scaling matrix for %d elements\n", max)
