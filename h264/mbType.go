@@ -1,6 +1,8 @@
 package h264
 
-import "fmt"
+import (
+	"errors"
+)
 
 const MB_TYPE_INFERRED = 1000
 
@@ -87,38 +89,41 @@ func MbTypeName(sliceType string, mbType int) string {
 	return sliceTypeName
 }
 
-func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) string {
-	modeName := "UnknownPartPredMode"
+var (
+	errNaMode    = errors.New("no mode for given slice and mb type")
+	errPartition = errors.New("partition must be 0")
+)
+
+func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (mbPartPredMode, error) {
 	if partition == 0 {
 		switch sliceType {
 		case "I":
 			if mbType == 0 {
 				if data.TransformSize8x8Flag {
-					return "Intra_8x8"
+					return intra8x8, nil
 				}
-				return "Intra_4x4"
+				return intra4x4, nil
 			}
 			if mbType > 0 && mbType < 25 {
-				return "Intra_16x16"
+				return intra16x16, nil
 			}
-			modeName = "I_PCM"
-
+			return -1, errNaMode
 		case "SI":
-			modeName = "Intra_4x4"
+			return intra4x4, nil
 		case "P":
 			fallthrough
 		case "SP":
 			if mbType >= 0 && mbType < 3 {
-				modeName = "Pred_L0"
+				return predL0, nil
 			} else if mbType == 3 || mbType == 4 {
-				modeName = fmt.Sprintf("Na%sSliceMode", sliceType)
+				return -1, errNaMode
 			} else {
-				modeName = "Pred_L0"
+				return predL0, nil
 			}
 		case "B":
 			switch mbType {
 			case 0:
-				modeName = "Direct"
+				return direct, nil
 			case 1:
 				fallthrough
 			case 4:
@@ -132,7 +137,7 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) st
 			case 12:
 				fallthrough
 			case 13:
-				modeName = "Pred_L0"
+				return predL0, nil
 			case 2:
 				fallthrough
 			case 6:
@@ -146,18 +151,16 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) st
 			case 14:
 				fallthrough
 			case 15:
-				modeName = "Pred_L1"
+				return predL1, nil
 			case 22:
-				modeName = "NaBSliceMode"
+				return -1, errNaMode
 			default:
 				if mbType > 15 && mbType < 22 {
-					modeName = "BiPred"
+					return biPred, nil
 				}
-				modeName = "Direct"
+				return direct, nil
 			}
-
 		}
-
 	}
-	return modeName
+	return -1, errPartition
 }

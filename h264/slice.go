@@ -254,9 +254,12 @@ func NumMbPart(nalUnit *NalUnit, sps *SPS, header *SliceHeader, data *SliceData)
 func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
 	var cabac *CABAC
 	sliceType := sliceTypeMap[sliceContext.Slice.Header.SliceType]
-	mbPartPredMode := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, 0)
-	if mbPartPredMode == "Intra_4x4" || mbPartPredMode == "Intra_8x8" || mbPartPredMode == "Intra_16x16" {
-		if mbPartPredMode == "Intra_4x4" {
+	mbPartPredMode, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, 0)
+	if err != nil {
+		return errors.Wrap(err, "could not get mbPartPredMode")
+	}
+	if mbPartPredMode == intra4x4 || mbPartPredMode == intra8x8 || mbPartPredMode == intra16x16 {
+		if mbPartPredMode == intra4x4 {
 			for luma4x4BlkIdx := 0; luma4x4BlkIdx < 16; luma4x4BlkIdx++ {
 				var v int
 				if sliceContext.PPS.EntropyCodingMode == 1 {
@@ -296,7 +299,7 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
 				}
 			}
 		}
-		if mbPartPredMode == "Intra_8x8" {
+		if mbPartPredMode == intra8x8 {
 			for luma8x8BlkIdx := 0; luma8x8BlkIdx < 4; luma8x8BlkIdx++ {
 				sliceContext.Update(sliceContext.Slice.Header, sliceContext.Slice.Data)
 				var v int
@@ -351,10 +354,14 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
 			}
 		}
 
-	} else if mbPartPredMode != "Direct" {
+	} else if mbPartPredMode != direct {
 		for mbPartIdx := 0; mbPartIdx < NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data); mbPartIdx++ {
 			sliceContext.Update(sliceContext.Slice.Header, sliceContext.Slice.Data)
-			if (sliceContext.Slice.Header.NumRefIdxL0ActiveMinus1 > 0 || sliceContext.Slice.Data.MbFieldDecodingFlag != sliceContext.Slice.Header.FieldPic) && MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx) != "Pred_L1" {
+			m, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx)
+			if err != nil {
+				return errors.Wrap(err, fmt.Sprintf("could not get mbPartPredMode for loop 1 mbPartIdx: %d", mbPartIdx))
+			}
+			if (sliceContext.Slice.Header.NumRefIdxL0ActiveMinus1 > 0 || sliceContext.Slice.Data.MbFieldDecodingFlag != sliceContext.Slice.Header.FieldPic) && m != predL1 {
 				logger.Printf("\tTODO: refIdxL0[%d] te or ae(v)\n", mbPartIdx)
 				if len(sliceContext.Slice.Data.RefIdxL0) < mbPartIdx {
 					sliceContext.Slice.Data.RefIdxL0 = append(
@@ -385,7 +392,11 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
 			}
 		}
 		for mbPartIdx := 0; mbPartIdx < NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data); mbPartIdx++ {
-			if MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx) != "Pred_L1" {
+			m, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx)
+			if err != nil {
+				return errors.Wrap(err, fmt.Sprintf("could not get mbPartPredMode for loop 2 mbPartIdx: %d", mbPartIdx))
+			}
+			if m != predL1 {
 				for compIdx := 0; compIdx < 2; compIdx++ {
 					if len(sliceContext.Slice.Data.MvdL0) < mbPartIdx {
 						sliceContext.Slice.Data.MvdL0 = append(
@@ -421,7 +432,11 @@ func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
 		}
 		for mbPartIdx := 0; mbPartIdx < NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data); mbPartIdx++ {
 			sliceContext.Update(sliceContext.Slice.Header, sliceContext.Slice.Data)
-			if MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx) != "Pred_L0" {
+			m, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, mbPartIdx)
+			if err != nil {
+				return errors.Wrap(err, fmt.Sprintf("could not get mbPartPredMode for loop 3 mbPartIdx: %d", mbPartIdx))
+			}
+			if m != predL0 {
 				for compIdx := 0; compIdx < 2; compIdx++ {
 					if len(sliceContext.Slice.Data.MvdL1) < mbPartIdx {
 						sliceContext.Slice.Data.MvdL1 = append(
@@ -740,7 +755,11 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) 
 
 			} else {
 				noSubMbPartSizeLessThan8x8Flag := 1
-				if sliceContext.Slice.Data.MbTypeName == "I_NxN" && MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0) != "Intra_16x16" && NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data) == 4 {
+				m, err := MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not get mbPartPredMode")
+				}
+				if sliceContext.Slice.Data.MbTypeName == "I_NxN" && m != intra16x16 && NumMbPart(sliceContext.NalUnit, sliceContext.SPS, sliceContext.Slice.Header, sliceContext.Slice.Data) == 4 {
 					logger.Printf("\tTODO: subMbPred\n")
 					/*
 						subMbType := SubMbPred(sliceContext.Slice.Data.MbType)
@@ -771,7 +790,11 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) 
 					}
 					MbPred(sliceContext, b, b.Bytes())
 				}
-				if MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0) != "Intra_16x16" {
+				m, err = MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not get mbPartPredMode")
+				}
+				if m != intra16x16 {
 					// TODO: me, ae
 					logger.Printf("TODO: CodedBlockPattern pending me/ae implementation\n")
 					if sliceContext.PPS.EntropyCodingMode == 1 {
@@ -804,7 +827,11 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) 
 						}
 					}
 				}
-				if CodedBlockPatternLuma(sliceContext.Slice.Data) > 0 || CodedBlockPatternChroma(sliceContext.Slice.Data) > 0 || MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0) == "Intra_16x16" {
+				m, err = MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not get mbPartPredMode")
+				}
+				if CodedBlockPatternLuma(sliceContext.Slice.Data) > 0 || CodedBlockPatternChroma(sliceContext.Slice.Data) > 0 || m == intra16x16 {
 					// TODO: se or ae(v)
 					if sliceContext.PPS.EntropyCodingMode == 1 {
 						binarization := NewBinarization("MbQpDelta", sliceContext.Slice.Data)

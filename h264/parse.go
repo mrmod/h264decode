@@ -20,11 +20,16 @@ import (
 	"github.com/pkg/errors"
 )
 
-type macroblockPredictionMode uint8
+type mbPartPredMode int8
 
 const (
-	intra4x4 macroblockPredictionMode = iota
+	intra4x4 mbPartPredMode = iota
 	intra8x8
+	intra16x16
+	predL0
+	predL1
+	direct
+	biPred
 	inter
 )
 
@@ -90,7 +95,7 @@ func readSe(r bitio.Reader) (int, error) {
 // readMe parses a syntax element of me(v) descriptor, i.e. mapped
 // Exp-Golomb-coded element, using methods described in sections 9.1 and 9.1.2
 // in Rec. ITU-T H.264 (04/2017).
-func readMe(r bitio.Reader, chromaArrayType uint, mpm macroblockPredictionMode) (uint, error) {
+func readMe(r bitio.Reader, chromaArrayType uint, mpm mbPartPredMode) (uint, error) {
 	// Indexes to codedBlockPattern map.
 	var i1, i2, i3 int
 
