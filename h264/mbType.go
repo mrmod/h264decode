@@ -87,6 +87,9 @@ func MbTypeName(sliceType string, mbType int) string {
 	return sliceTypeName
 }
 
+// MbPartPredMode returns a macroblock partition prediction mode for the given
+// slice data, slice type, macroblock type and partition, consistent with tables
+// 7-11, 7-12, 7-13 and 7-14 from the specifications.
 func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) string {
 	modeName := "UnknownPartPredMode"
 	if partition == 0 {
