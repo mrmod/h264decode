@@ -89,6 +89,7 @@ func MbTypeName(sliceType string, mbType int) string {
 	return sliceTypeName
 }
 
+// Errors used by MbPartPredMode.
 var (
 	errNaMode    = errors.New("no mode for given slice and mb type")
 	errPartition = errors.New("partition must be 0")
