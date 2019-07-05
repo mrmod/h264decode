@@ -1,23 +1,24 @@
 package h264
 
+// NALU types, as defined in table 7-1 in specifications.
 const (
-	NALU_TYPE_UNSPECIFIED = iota
-	NALU_TYPE_SLICE_NON_IDR_PICTURE
-	NALU_TYPE_SLICE_PART_A
-	NALU_TYPE_SLICE_PART_B
-	NALU_TYPE_SLICE_PART_C
-	NALU_TYPE_SLICE_IDR_PICTURE
-	NALU_TYPE_SEI_SINFO
-	NALU_TYPE_SPS
-	NALU_TYPE_PPS
-	NALU_TYPE_ACCESS_UNIT_DELIMITER
-	NALU_TYPE_END_OF_SEQUENCE
-	NALU_TYPE_END_OF_STREAM
-	NALU_TYPE_FILLER_DATA
-	NALU_TYPE_SPS_EXTENSIONS
-	NALU_TYPE_PREFIX_NALU
-	NALU_TYPE_SUBSET_SPS
-	NALU_TYPE_DEPTH_PARAM_SET
+	naluTypeUnspecified = iota
+	naluTypeSliceNonIDRPicture
+	naluTypeSlicePartA
+	naluTypeSlicePartB
+	naluTypeSlicePartC
+	naluTypeSliceIDRPicture
+	naluTypeSEI
+	naluTypeSPS
+	naluTypePPS
+	naluTypeAccessUnitDelimiter
+	naluTypeEndOfSequence
+	naluTypeEndOfStream
+	naluTypeFillerData
+	naluTypeSPSExtension
+	naluTypePrefixNALU
+	naluTypeSubsetSPS
+	naluTypeDepthParamSet
 )
 
 var (
