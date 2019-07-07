@@ -120,7 +120,7 @@ func TestReadMe(t *testing.T) {
 	tests := []struct {
 		in   []byte // Input data.
 		cat  uint   // Chroma array..
-		mpm  macroblockPredictionMode
+		mpm  mbPartPredMode
 		want uint  // Expected result from readMe.
 		err  error // Expected value of err from readMe.
 	}{
