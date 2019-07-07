@@ -62,20 +62,20 @@ func (h *H264Reader) Start() {
 	for {
 		nalUnit, _ := h.readNalUnit()
 		switch nalUnit.Type {
-		case NALU_TYPE_SPS:
+		case naluTypeSPS:
 			// TODO: handle this error
 			sps, _ := NewSPS(nalUnit.rbsp, false)
 			h.VideoStreams = append(
 				h.VideoStreams,
 				&VideoStream{SPS: sps},
 			)
-		case NALU_TYPE_PPS:
+		case naluTypePPS:
 			videoStream := h.VideoStreams[len(h.VideoStreams)-1]
 			// TODO: handle this error
 			videoStream.PPS, _ = NewPPS(videoStream.SPS, nalUnit.RBSP(), false)
-		case NALU_TYPE_SLICE_IDR_PICTURE:
+		case naluTypeSliceIDRPicture:
 			fallthrough
-		case NALU_TYPE_SLICE_NON_IDR_PICTURE:
+		case naluTypeSliceNonIDRPicture:
 			videoStream := h.VideoStreams[len(h.VideoStreams)-1]
 			logger.Printf("info: frame number %d\n", len(videoStream.Slices))
 			// TODO: handle this error
