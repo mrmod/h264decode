@@ -87,7 +87,10 @@ func NewPPS(sps *SPS, rbsp []byte, showPacket bool) (*PPS, error) {
 			}
 		} else if pps.SliceGroupMapType == 2 {
 			for iGroup := 0; iGroup < pps.NumSliceGroupsMinus1; iGroup++ {
-				pps.TopLeft[iGroup], _ = readUe(nil)
+				pps.TopLeft[iGroup], err = readUe(nil)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not parse TopLeft[iGroup]")
+				}
 				if err != nil {
 					return nil, errors.Wrap(err, "could not parse TopLeft[iGroup]")
 				}
