@@ -15,6 +15,8 @@ var subWidthCTests = []struct {
 	{SPS{ChromaFormat: 999}, 17},
 }
 
+// TestSubWidthC tests that the correct SubWidthC is returned given
+// SPS inputs with various chroma formats.
 func TestSubWidthC(t *testing.T) {
 	for _, tt := range subWidthCTests {
 		if got := SubWidthC(&tt.in); got != tt.want {
