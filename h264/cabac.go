@@ -568,6 +568,7 @@ var ctxIdxLookup = map[int]map[int]int{
 	47: {0: NaCtxId, 1: 3, 2: 4, 3: 5},
 	54: {0: NaCtxId, 1: 4},
 	64: {0: NaCtxId, 1: 3, 2: 3},
+	69: {0: 0, 1: 0, 2: 0},
 	77: {0: NaCtxId, 1: NaCtxId},
 }
 
@@ -646,10 +647,6 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 		}
 		ctxIdx = 0
 	case 69:
-		// TODO: Is this correct? ctxIdx gets set but then we immediately return NaCtxId anyway
-		if binIdx >= 0 && binIdx < 3 {
-			ctxIdx = 0
-		}
 		return NaCtxId
 	case 70:
 		if binIdx != 0 {
