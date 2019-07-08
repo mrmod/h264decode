@@ -111,6 +111,8 @@ var ctxIdxTests = []struct {
 	{999, 0, 399, 10000},
 }
 
+// TestCtxIdx tests that the CtxIdx function returns the correct
+// value given binIdx and ctxIdxOffset.
 func TestCtxIdx(t *testing.T) {
 	for _, tt := range ctxIdxTests {
 		if got := CtxIdx(tt.binIdx, tt.maxBinIdxCtx, tt.ctxIdxOffset); got != tt.want {
