@@ -557,11 +557,34 @@ func (c *CABAC) StateTransitionProcess(binVal int) {
 	}
 }
 
+var ctxIdxLookup = map[int]map[int]int{
+	3:  {0: NaCtxId, 1: 276, 2: 3, 3: 4, 4: NaCtxId, 5: NaCtxId},
+	14: {0: 0, 1: 1, 2: NaCtxId},
+	17: {0: 0, 1: 276, 2: 1, 3: 2, 4: NaCtxId},
+	27: {0: NaCtxId, 1: 3, 2: NaCtxId},
+	32: {0: 0, 1: 276, 2: 1, 3: 2, 4: NaCtxId},
+	36: {2: NaCtxId, 3: 3, 4: 3, 5: 3},
+	40: {0: NaCtxId},
+	47: {0: NaCtxId, 1: 3, 2: 4, 3: 5},
+	54: {0: NaCtxId, 1: 4},
+	64: {0: NaCtxId, 1: 3, 2: 3},
+	69: {0: 0, 1: 0, 2: 0},
+	77: {0: NaCtxId, 1: NaCtxId},
+}
+
 // 9.3.3.1
 // Returns ctxIdx
 func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 	ctxIdx := NaCtxId
 	// table 9-39
+	c, ok := ctxIdxLookup[ctxIdxOffset]
+	if ok {
+		v, ok := c[binIdx]
+		if ok {
+			return v
+		}
+	}
+
 	switch ctxIdxOffset {
 	case 0:
 		if binIdx != 0 {
@@ -569,22 +592,7 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 		}
 		// 9.3.3.1.1.3
 	case 3:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.3
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 3
-		case 3:
-			ctxIdx = 4
-		case 4:
-			// 9.3.3.1.2
-		case 5:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 7
-		}
+		return 7
 	case 11:
 		if binIdx != 0 {
 			return NaCtxId
@@ -592,34 +600,11 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 
 		// 9.3.3.1.1.3
 	case 14:
-		if binIdx == 0 {
-			ctxIdx = 0
-		}
-		if binIdx == 1 {
-			ctxIdx = 1
-		}
-		if binIdx == 2 {
-			// 9.3.3.1.2
-		}
 		if binIdx > 2 {
 			return NaCtxId
 		}
 	case 17:
-		switch binIdx {
-		case 0:
-			ctxIdx = 0
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 1
-		case 3:
-			ctxIdx = 2
-		case 4:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 3
-		}
-
+		return 3
 	case 21:
 		if binIdx < 3 {
 			ctxIdx = binIdx
@@ -627,69 +612,20 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 			return NaCtxId
 		}
 	case 24:
-		if binIdx != 0 {
-			return NaCtxId
-		}
 		// 9.3.3.1.1.1
 	case 27:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.3
-		case 1:
-			ctxIdx = 3
-		case 2:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 5
-		}
+		return 5
 	case 32:
-		switch binIdx {
-		case 0:
-			ctxIdx = 0
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 1
-		case 3:
-			ctxIdx = 2
-		case 4:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 3
-		}
+		return 3
 	case 36:
 		if binIdx == 0 || binIdx == 1 {
 			ctxIdx = binIdx
 		}
-		if binIdx == 2 {
-			// 9.3.3.1.2
-		}
-		if binIdx > 2 && binIdx < 6 {
-			ctxIdx = 3
-		}
-
 	case 40:
 		fallthrough
 	case 47:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.7
-		case 1:
-			ctxIdx = 3
-		case 2:
-			ctxIdx = 4
-		case 3:
-			ctxIdx = 5
-		default:
-			ctxIdx = 6
-		}
+		return 6
 	case 54:
-		if binIdx == 0 {
-			// 9.3.3.1.1.6
-		}
-		if binIdx == 1 {
-			ctxIdx = 4
-		}
 		if binIdx > 1 {
 			ctxIdx = 5
 		}
@@ -704,49 +640,21 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 			ctxIdx = 3
 		}
 	case 64:
-		if binIdx == 0 {
-			// 9.3.3.1.1.8
-		} else if binIdx == 1 || binIdx == 2 {
-			ctxIdx = 3
-		} else {
-			return NaCtxId
-		}
+		return NaCtxId
 	case 68:
 		if binIdx != 0 {
 			return NaCtxId
 		}
 		ctxIdx = 0
 	case 69:
-		if binIdx >= 0 && binIdx < 3 {
-			ctxIdx = 0
-		}
 		return NaCtxId
 	case 70:
 		if binIdx != 0 {
 			return NaCtxId
 		}
 		// 9.3.3.1.1.2
-	case 73:
-		switch binIdx {
-		case 0:
-			fallthrough
-		case 1:
-			fallthrough
-		case 2:
-			fallthrough
-		case 3:
-			// 9.3.3.1.1.4
-		default:
-			return NaCtxId
-		}
 	case 77:
-		if binIdx == 0 {
-			// 9.3.3.1.1.4
-		} else if binIdx == 1 {
-			// 9.3.3.1.1.4
-		} else {
-			return NaCtxId
-		}
+		return NaCtxId
 	case 276:
 		if binIdx != 0 {
 			return NaCtxId
