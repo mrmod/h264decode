@@ -1076,7 +1076,7 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	if sliceType == "B" {
 		header.DirectSpatialMvPred = flagField()
 	}
-	if sliceType == "B" || sliceType == "SP" || sliceType == "B" {
+	if sliceType == "B" || sliceType == "SP" {
 		header.NumRefIdxActiveOverride = flagField()
 		if header.NumRefIdxActiveOverride {
 			header.NumRefIdxL0ActiveMinus1 = ue(b.golomb())

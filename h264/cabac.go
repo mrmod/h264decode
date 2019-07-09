@@ -267,7 +267,10 @@ func (c *CABAC) InitDecodingEngine(b *BitReader) {
 	logger.Printf("debug: initializing arithmetic decoding engine\n")
 	b.LogStreamPosition()
 	codIRange := 510
-	codIOffset := b.NextField("Initial CodIOffset", 9)
+	codIOffset, err := b.ReadBitsBE(9)
+	if err != nil {
+		logger.Printf("error: unable to determine codIOffset: %v", err)
+	}
 	logger.Printf("debug: codIRange: %d :: codIOffsset: %d\n", codIRange, codIOffset)
 	c.DecodingEngine = &DecodingEngine{codIRange, codIOffset}
 	c.IsInitialized = true

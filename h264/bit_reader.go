@@ -281,7 +281,7 @@ func (b *BitReader) ReadByte() (byte, error) {
 		b.byteOffset += 1
 		return bt, nil
 	}
-	return byte(0), fmt.Errorf("EOF:  no more bytes")
+	return byte(0), EOFBytes
 }
 func (b *BitReader) ReadBytes(n int) ([]byte, error) {
 	buf := []byte{}
@@ -295,6 +295,59 @@ func (b *BitReader) ReadBytes(n int) ([]byte, error) {
 	return buf, nil
 }
 
+var EOFBytes = fmt.Errorf("error: no more bytes")
+var EOFBits = fmt.Errorf("error: no more bits")
+
+// ReadBitsBE: Read N bits, return big endian base10 value
+func (b *BitReader) ReadBitsBE(n int) (int, error) {
+	var val int
+	bits, err := b.ReadBitsSlice(n)
+	if err != nil {
+		return val, err
+	}
+	var bitPos int
+	for i := len(bits) - 1; i >= 0; i-- {
+		val += bits[i] << uint(7-bitPos)
+		bitPos++
+	}
+	return val, nil
+}
+
+// ReadBits: Read N bits, return little endian base10 value
+func (b *BitReader) ReadBits(n int) (int, error) {
+	bits, err := b.ReadBitsSlice(n)
+	if err != nil {
+		return 0, err
+	}
+	return bitVal(bits), nil
+}
+
+// ReadBitsSlice : Read N bits, return binarized slice
+func (b *BitReader) ReadBitsSlice(n int) ([]int, error) {
+	var bits []int
+	if b.byteOffset > len(b.bytes) {
+		return bits, EOFBytes
+	}
+	bits = make([]int, n)
+	_byte, err := b.ReadByte()
+	if err != nil {
+		return bits, err
+	}
+	for i := range bits {
+
+		v := byte(1 << uint8(len(bits)-i-1))
+		if _byte&v == v {
+			bits[i] = 1
+		}
+		if i > 0 && i%8 == 0 {
+			_byte, err = b.ReadByte()
+			if err != nil {
+				return bits, err
+			}
+		}
+	}
+	return bits, nil
+}
 func (b *BitReader) Read(buf []int) (int, error) {
 	if b.byteOffset > len(b.bytes) {
 		return 0, fmt.Errorf("EOF: %d > %d\n", b.byteOffset, len(b.bytes))
