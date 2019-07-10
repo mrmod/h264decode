@@ -4,5 +4,5 @@ go:
   - 1.12.6
 
 script:
-  - make lint
-  - make test
+  - env GO111MODULE=on make lint
+  - env GO111MODULE=on make test
