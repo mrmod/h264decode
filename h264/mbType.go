@@ -89,7 +89,6 @@ func MbTypeName(sliceType string, mbType int) string {
 	return sliceTypeName
 }
 
-
 // Errors used by MbPartPredMode.
 var (
 	errNaMode    = errors.New("no mode for given slice and mb type")
@@ -99,7 +98,7 @@ var (
 // MbPartPredMode returns a macroblock partition prediction mode for the given
 // slice data, slice type, macroblock type and partition, consistent with tables
 // 7-11, 7-12, 7-13 and 7-14 from the specifications.
-func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) string {
+func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (mbPartPredMode, error) {
 	if partition == 0 {
 		switch sliceType {
 		case "I":
