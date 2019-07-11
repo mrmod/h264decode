@@ -1,4 +1,4 @@
-[![Go Report Card](https://goreportcard.com/badge/github.com/ausocean/h264decode)](https://goreportcard.com/report/github.com/ausocean/h264decode)
+[![Build Status](https://travis-ci.org/ausocean/h264decode.svg?branch=master)](https://travis-ci.org/ausocean/h264decode) [![Go Report Card](https://goreportcard.com/badge/github.com/ausocean/h264decode)](https://goreportcard.com/report/github.com/ausocean/h264decode)
 
 Listens for a stream of H264 bytes on port 8000.
 
