@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/ausocean/h264decode/h264/bits"
 	"github.com/pkg/errors"
 )
 
@@ -85,7 +86,7 @@ type SliceHeader struct {
 }
 
 type SliceData struct {
-	BitReader                *BitReader
+	BitReader                *bits.BitReader
 	CabacAlignmentOneBit     int
 	MbSkipRun                int
 	MbSkipFlag               bool
@@ -259,7 +260,7 @@ func NumMbPart(nalUnit *NalUnit, sps *SPS, header *SliceHeader, data *SliceData)
 	return numMbPart
 }
 
-func MbPred(sliceContext *SliceContext, b *BitReader, rbsp []byte) error {
+func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 	var cabac *CABAC
 	sliceType := sliceTypeMap[sliceContext.Slice.Header.SliceType]
 	mbPartPredMode, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, 0)
@@ -596,12 +597,12 @@ func MbaffFrameFlag(sps *SPS, header *SliceHeader) int {
 	return 0
 }
 
-func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) {
+func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, error) {
 	var cabac *CABAC
 	var err error
 	logger.Printf("debug: SliceData starts at ByteOffset: %d BitOffset %d\n", b.byteOffset, b.bitOffset)
 	logger.Printf("debug: \t== %d bytes remain ==\n", len(b.bytes)-b.byteOffset)
-	sliceContext.Slice.Data = &SliceData{BitReader: b}
+	sliceContext.Slice.Data = &SliceData{bits.BitReader: b}
 	flagField := func() bool {
 		if v := b.NextField("", 1); v == 1 {
 			return true
@@ -683,7 +684,7 @@ func NewSliceData(sliceContext *SliceContext, b *BitReader) (*SliceData, error) 
 					if binarization.UseDecodeBypass == 1 {
 						// DecodeBypass
 						logger.Printf("TODO: decodeBypass is set: 9.3.3.2.3")
-						codIRange, codIOffset := initDecodingEngine(sliceContext.Slice.Data.BitReader)
+						codIRange, codIOffset := initDecodingEngine(sliceContext.Slice.Data.bits.BitReader)
 						// Initialize the decoder
 						// TODO: When should the suffix of MaxBinIdxCtx be used and when just the prefix?
 						// TODO: When should the suffix of CtxIdxOffset be used?
@@ -900,7 +901,7 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	} else {
 		header.ChromaArrayType = sps.ChromaFormat
 	}
-	b := &BitReader{bytes: rbsp}
+	b := &bits.BitReader{bytes: rbsp}
 	flagField := func() bool {
 		if v := b.NextField("", 1); v == 1 {
 			return true

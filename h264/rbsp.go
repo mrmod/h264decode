@@ -1,6 +1,10 @@
 package h264
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/ausocean/h264decode/h264/bits"
+)
 
 const (
 	profileBaseline          = 66
@@ -25,7 +29,7 @@ var (
 )
 
 // 7.3.2.11
-func rbspTrailingBits(b *BitReader) {
+func rbspTrailingBits(b *bits.BitReader) {
 	rbspStopOneBit := make([]int, 1)
 	if _, err := b.Read(rbspStopOneBit); err != nil {
 		fmt.Printf("error reading StopOneBit: %v\n", err)

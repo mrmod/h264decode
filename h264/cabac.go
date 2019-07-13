@@ -1,6 +1,9 @@
 package h264
 
-import "github.com/pkg/errors"
+import (
+	"github.com/ausocean/h264decode/h264/bits"
+	"github.com/pkg/errors"
+)
 
 const (
 	NaCtxId            = 10000
@@ -97,7 +100,7 @@ func CondTermFlag(mbAddr, mbSkipFlag int) int {
 }
 
 // s9.3.3 p 278: Returns the value of the syntax element
-func (bin *Binarization) Decode(sliceContext *SliceContext, b *BitReader, rbsp []byte) {
+func (bin *Binarization) Decode(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) {
 	if bin.SyntaxElement == "MbType" {
 		bin.binString = binIdxMbMap[sliceContext.Slice.Data.SliceTypeName][sliceContext.Slice.Data.MbType]
 	} else {
@@ -438,23 +441,29 @@ func (b *Binarization) IsBinStringMatch(bits []int) bool {
 }
 
 // 9.3.1.2: output is codIRange and codIOffset
-func initDecodingEngine(bitReader *BitReader) (int, int) {
+func initDecodingEngine(bitReader *bits.BitReader) (int, int, error) {
 	logger.Printf("debug: initializing arithmetic decoding engine\n")
-	bitReader.LogStreamPosition()
 	codIRange := 510
-	codIOffset := bitReader.NextField("Initial CodIOffset", 9)
+	codIOffset, err := bitReader.ReadBits(9)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not read codIOffset")
+	}
 	logger.Printf("debug: codIRange: %d :: codIOffsset: %d\n", codIRange, codIOffset)
-	return codIRange, codIOffset
+	return codIRange, int(codIOffset), nil
 }
 
 // 9.3.3.2: output is value of the bin
-func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ctxIdx, codIRange, codIOffset int) ArithmeticDecoding {
+func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ctxIdx, codIRange, codIOffset int) (ArithmeticDecoding, error) {
 	a := ArithmeticDecoding{Context: context, Binarization: binarization}
 	logger.Printf("debug: decoding bypass %d, for ctx %d\n", binarization.UseDecodeBypass, ctxIdx)
 	// TODO: Implement
 	if binarization.UseDecodeBypass == 1 {
 		// TODO: 9.3.3.2.3 : DecodeBypass()
-		codIOffset, a.BinVal = a.DecodeBypass(context.Slice.Data, codIRange, codIOffset)
+		var err error
+		codIOffset, a.BinVal, err = a.DecodeBypass(context.Slice.Data, codIRange, codIOffset)
+		if err != nil {
+			return ArithmeticDecoding{}, errors.Wrap(err, "error from DecodeBypass getting codIOffset and BinVal")
+		}
 
 	} else if binarization.UseDecodeBypass == 0 && ctxIdx == 276 {
 		// TODO: 9.3.3.2.4 : DecodeTerminate()
@@ -462,53 +471,64 @@ func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ct
 		// TODO: 9.3.3.2.1 : DecodeDecision()
 	}
 	a.BinVal = -1
-	return a
+	return a, nil
 }
 
 // 9.3.3.2.3
 // Invoked when bypassFlag is equal to 1
-func (a ArithmeticDecoding) DecodeBypass(sliceData *SliceData, codIRange, codIOffset int) (int, int) {
+func (a ArithmeticDecoding) DecodeBypass(sliceData *SliceData, codIRange, codIOffset int) (int, int, error) {
 	// Decoded value binVal
 	codIOffset = codIOffset << uint(1)
 	// TODO: Concurrency check
 	// TODO: Possibly should be codIOffset | ReadOneBit
-	codIOffset = codIOffset << uint(sliceData.BitReader.ReadOneBit())
+	shift, err := sliceData.BitReader.ReadBits(1)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "coult not read shift bit from sliceData.")
+	}
+	codIOffset = codIOffset << uint(shift)
 	if codIOffset >= codIRange {
 		a.BinVal = 1
 		codIOffset -= codIRange
 	} else {
 		a.BinVal = 0
 	}
-	return codIOffset, a.BinVal
+	return codIOffset, a.BinVal, nil
 }
 
 // 9.3.3.2.4
 // Decodes endOfSliceFlag and I_PCM
 // Returns codIRange, codIOffSet, decoded value of binVal
-func (a ArithmeticDecoding) DecodeTerminate(sliceData *SliceData, codIRange, codIOffset int) (int, int, int) {
+func (a ArithmeticDecoding) DecodeTerminate(sliceData *SliceData, codIRange, codIOffset int) (int, int, int, error) {
 	codIRange -= 2
 	if codIOffset >= codIRange {
 		a.BinVal = 1
 		// Terminate CABAC decoding, last bit inserted into codIOffset is = 1
 		// this is now also the rbspStopOneBit
 		// TODO: How is this denoting termination?
-		return codIRange, codIOffset, a.BinVal
+		return codIRange, codIOffset, a.BinVal, nil
 	}
 	a.BinVal = 0
-	codIRange, codIOffset = a.RenormD(sliceData, codIRange, codIOffset)
-
-	return codIRange, codIOffset, a.BinVal
+	var err error
+	codIRange, codIOffset, err = a.RenormD(sliceData, codIRange, codIOffset)
+	if err != nil {
+		return 0, 0, 0, errors.Wrap(err, "error from RenormD")
+	}
+	return codIRange, codIOffset, a.BinVal, nil
 }
 
 // 9.3.3.2.2 Renormalization process of ADecEngine
 // Returns codIRange, codIOffset
-func (a ArithmeticDecoding) RenormD(sliceData *SliceData, codIRange, codIOffset int) (int, int) {
+func (a ArithmeticDecoding) RenormD(sliceData *SliceData, codIRange, codIOffset int) (int, int, error) {
 	if codIRange >= 256 {
-		return codIRange, codIOffset
+		return codIRange, codIOffset, nil
 	}
 	codIRange = codIRange << uint(1)
 	codIOffset = codIOffset << uint(1)
-	codIOffset = codIOffset | sliceData.BitReader.ReadOneBit()
+	bit, err := sliceData.BitReader.ReadBits(1)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not read bit from sliceData")
+	}
+	codIOffset = codIOffset | int(bit)
 	return a.RenormD(sliceData, codIRange, codIOffset)
 }
 
