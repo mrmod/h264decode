@@ -16,7 +16,7 @@ package h264
 import (
 	"math"
 
-	"github.com/icza/bitio"
+	"github.com/ausocean/h264decode/h264/bits"
 	"github.com/pkg/errors"
 )
 
@@ -38,7 +38,7 @@ const (
 //
 // TODO: this should return uint, but rest of code needs to be changed for this
 // to happen.
-func readUe(r bitio.Reader) (int, error) {
+func readUe(r *bits.BitReader) (int, error) {
 	nZeros := -1
 	var err error
 	for b := uint64(0); b == 0; nZeros++ {
@@ -47,7 +47,7 @@ func readUe(r bitio.Reader) (int, error) {
 			return 0, err
 		}
 	}
-	rem, err := r.ReadBits(byte(nZeros))
+	rem, err := r.ReadBits(int(nZeros))
 	if err != nil {
 		return 0, err
 	}
@@ -59,7 +59,7 @@ func readUe(r bitio.Reader) (int, error) {
 // Rec. ITU-T H.264 (04/2017).
 //
 // TODO: this should also return uint.
-func readTe(r bitio.Reader, x uint) (int, error) {
+func readTe(r *bits.BitReader, x uint) (int, error) {
 	if x > 1 {
 		return readUe(r)
 	}
@@ -83,7 +83,7 @@ var errReadTeBadX = errors.New("x must be more than or equal to 1")
 // readSe parses a syntax element with descriptor se(v), i.e. a signed integer
 // Exp-Golomb-coded syntax element, using the method described in sections
 // 9.1 and 9.1.1 in Rec. ITU-T H.264 (04/2017).
-func readSe(r bitio.Reader) (int, error) {
+func readSe(r *bits.BitReader) (int, error) {
 	codeNum, err := readUe(r)
 	if err != nil {
 		return 0, errors.Wrap(err, "error reading ue(v)")
@@ -95,7 +95,7 @@ func readSe(r bitio.Reader) (int, error) {
 // readMe parses a syntax element of me(v) descriptor, i.e. mapped
 // Exp-Golomb-coded element, using methods described in sections 9.1 and 9.1.2
 // in Rec. ITU-T H.264 (04/2017).
-func readMe(r bitio.Reader, chromaArrayType uint, mpm mbPartPredMode) (uint, error) {
+func readMe(r *bits.BitReader, chromaArrayType uint, mpm mbPartPredMode) (uint, error) {
 	// Indexes to codedBlockPattern map.
 	var i1, i2, i3 int
 
