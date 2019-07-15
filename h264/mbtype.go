@@ -111,7 +111,7 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (m
 			if mbType > 0 && mbType < 25 {
 				return intra16x16, nil
 			}
-			return -1, errNaMode
+			return naMbPartPredMode, errNaMode
 		case "SI":
 			return intra4x4, nil
 		case "P":
@@ -120,7 +120,7 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (m
 			if mbType >= 0 && mbType < 3 {
 				return predL0, nil
 			} else if mbType == 3 || mbType == 4 {
-				return -1, errNaMode
+				return naMbPartPredMode, errNaMode
 			} else {
 				return predL0, nil
 			}
@@ -128,6 +128,8 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (m
 			switch mbType {
 			case 0:
 				return direct, nil
+			case 3:
+				return biPred, nil
 			case 1:
 				fallthrough
 			case 4:
@@ -157,7 +159,7 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (m
 			case 15:
 				return predL1, nil
 			case 22:
-				return -1, errNaMode
+				return naMbPartPredMode, errNaMode
 			default:
 				if mbType > 15 && mbType < 22 {
 					return biPred, nil
