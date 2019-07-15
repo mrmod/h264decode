@@ -1,6 +1,7 @@
 package h264
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 
@@ -260,7 +261,7 @@ func NumMbPart(nalUnit *NalUnit, sps *SPS, header *SliceHeader, data *SliceData)
 	return numMbPart
 }
 
-func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
+func MbPred(sliceContext *SliceContext, br *bits.BitReader, rbsp []byte) error {
 	var cabac *CABAC
 	sliceType := sliceTypeMap[sliceContext.Slice.Header.SliceType]
 	mbPartPredMode, err := MbPartPredMode(sliceContext.Slice.Data, sliceType, sliceContext.Slice.Data.MbType, 0)
@@ -276,13 +277,17 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 					binarization := NewBinarization(
 						"PrevIntra4x4PredModeFlag",
 						sliceContext.Slice.Data)
-					binarization.Decode(sliceContext, b, rbsp)
+					binarization.Decode(sliceContext, br, rbsp)
 
 					cabac = initCabac(binarization, sliceContext)
 					_ = cabac
 					logger.Printf("TODO: ae for PevIntra4x4PredModeFlag[%d]\n", luma4x4BlkIdx)
 				} else {
-					v = b.NextField(fmt.Sprintf("PrevIntra4x4PredModeFlag[%d]", luma4x4BlkIdx), 1)
+					b, err := br.ReadBits(1)
+					if err != nil {
+						return errors.Wrap(err, "could not read PrevIntra4x4PredModeFlag")
+					}
+					v = int(b)
 				}
 				sliceContext.Slice.Data.PrevIntra4x4PredModeFlag = append(
 					sliceContext.Slice.Data.PrevIntra4x4PredModeFlag,
@@ -293,11 +298,15 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 						binarization := NewBinarization(
 							"RemIntra4x4PredMode",
 							sliceContext.Slice.Data)
-						binarization.Decode(sliceContext, b, rbsp)
+						binarization.Decode(sliceContext, br, rbsp)
 
 						logger.Printf("TODO: ae for RemIntra4x4PredMode[%d]\n", luma4x4BlkIdx)
 					} else {
-						v = b.NextField(fmt.Sprintf("RemIntra4x4PredMode[%d]", luma4x4BlkIdx), 3)
+						b, err := br.ReadBits(3)
+						if err != nil {
+							return errors.Wrap(err, "could not read RemIntra4x4PredMode")
+						}
+						v = int(b)
 					}
 					if len(sliceContext.Slice.Data.RemIntra4x4PredMode) < luma4x4BlkIdx {
 						sliceContext.Slice.Data.RemIntra4x4PredMode = append(
@@ -315,11 +324,15 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 				if sliceContext.PPS.EntropyCodingMode == 1 {
 					// TODO: 1 bit or ae(v)
 					binarization := NewBinarization("PrevIntra8x8PredModeFlag", sliceContext.Slice.Data)
-					binarization.Decode(sliceContext, b, rbsp)
+					binarization.Decode(sliceContext, br, rbsp)
 
 					logger.Printf("TODO: ae for PrevIntra8x8PredModeFlag[%d]\n", luma8x8BlkIdx)
 				} else {
-					v = b.NextField(fmt.Sprintf("PrevIntra8x8PredModeFlag[%d]", luma8x8BlkIdx), 1)
+					b, err := br.ReadBits(1)
+					if err != nil {
+						return errors.Wrap(err, "could not read PrevIntra8x8PredModeFlag")
+					}
+					v = int(b)
 				}
 				sliceContext.Slice.Data.PrevIntra8x8PredModeFlag = append(
 					sliceContext.Slice.Data.PrevIntra8x8PredModeFlag, v)
@@ -329,11 +342,15 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 						binarization := NewBinarization(
 							"RemIntra8x8PredMode",
 							sliceContext.Slice.Data)
-						binarization.Decode(sliceContext, b, rbsp)
+						binarization.Decode(sliceContext, br, rbsp)
 
 						logger.Printf("TODO: ae for RemIntra8x8PredMode[%d]\n", luma8x8BlkIdx)
 					} else {
-						v = b.NextField(fmt.Sprintf("RemIntra8x8PredMode[%d]", luma8x8BlkIdx), 3)
+						b, err := br.ReadBits(3)
+						if err != nil {
+							return errors.Wrap(err, "could not read RemIntra8x8PredMode")
+						}
+						v = int(b)
 					}
 					if len(sliceContext.Slice.Data.RemIntra8x8PredMode) < luma8x8BlkIdx {
 						sliceContext.Slice.Data.RemIntra8x8PredMode = append(
@@ -351,7 +368,7 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 				binarization := NewBinarization(
 					"IntraChromaPredMode",
 					sliceContext.Slice.Data)
-				binarization.Decode(sliceContext, b, rbsp)
+				binarization.Decode(sliceContext, br, rbsp)
 
 				logger.Printf("TODO: ae for IntraChromaPredMode\n")
 			} else {
@@ -381,7 +398,7 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 					binarization := NewBinarization(
 						"RefIdxL0",
 						sliceContext.Slice.Data)
-					binarization.Decode(sliceContext, b, rbsp)
+					binarization.Decode(sliceContext, br, rbsp)
 
 					logger.Printf("TODO: ae for RefIdxL0[%d]\n", mbPartIdx)
 				} else {
@@ -423,13 +440,13 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 							binarization := NewBinarization(
 								"MvdLnEnd0",
 								sliceContext.Slice.Data)
-							binarization.Decode(sliceContext, b, rbsp)
+							binarization.Decode(sliceContext, br, rbsp)
 
 						} else if compIdx == 1 {
 							binarization := NewBinarization(
 								"MvdLnEnd1",
 								sliceContext.Slice.Data)
-							binarization.Decode(sliceContext, b, rbsp)
+							binarization.Decode(sliceContext, br, rbsp)
 
 						}
 						logger.Printf("TODO: ae for MvdL0[%d][0][%d]\n", mbPartIdx, compIdx)
@@ -462,13 +479,13 @@ func MbPred(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) error {
 							binarization := NewBinarization(
 								"MvdLnEnd0",
 								sliceContext.Slice.Data)
-							binarization.Decode(sliceContext, b, rbsp)
+							binarization.Decode(sliceContext, br, rbsp)
 
 						} else if compIdx == 1 {
 							binarization := NewBinarization(
 								"MvdLnEnd1",
 								sliceContext.Slice.Data)
-							binarization.Decode(sliceContext, b, rbsp)
+							binarization.Decode(sliceContext, br, rbsp)
 
 						}
 						// TODO: se(v) or ae(v)
@@ -597,23 +614,19 @@ func MbaffFrameFlag(sps *SPS, header *SliceHeader) int {
 	return 0
 }
 
-func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, error) {
+func NewSliceData(sliceContext *SliceContext, br *bits.BitReader) (*SliceData, error) {
 	var cabac *CABAC
 	var err error
-	logger.Printf("debug: SliceData starts at ByteOffset: %d BitOffset %d\n", b.byteOffset, b.bitOffset)
-	logger.Printf("debug: \t== %d bytes remain ==\n", len(b.bytes)-b.byteOffset)
-	sliceContext.Slice.Data = &SliceData{bits.BitReader: b}
-	flagField := func() bool {
-		if v := b.NextField("", 1); v == 1 {
-			return true
-		}
-		return false
-	}
+	sliceContext.Slice.Data = &SliceData{BitReader: br}
 	// TODO: Why is this being initialized here?
 	// initCabac(sliceContext)
 	if sliceContext.PPS.EntropyCodingMode == 1 {
-		for !b.IsByteAligned() {
-			sliceContext.Slice.Data.CabacAlignmentOneBit = b.NextField("CabacAlignmentOneBit", 1)
+		for !br.ByteAligned() {
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read CabacAlignmentOneBit")
+			}
+			sliceContext.Slice.Data.CabacAlignmentOneBit = int(b)
 		}
 	}
 	mbaffFrameFlag := 0
@@ -645,13 +658,15 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 					currMbAddr = nextMbAddress(currMbAddr, sliceContext.SPS, sliceContext.PPS, sliceContext.Slice.Header)
 				}
 				if sliceContext.Slice.Data.MbSkipRun > 0 {
-					logger.Printf("debug: \tNon-I/SI: Checking for more sliceContext.Slice.Data %d:%d:%d\n", b.byteOffset, b.bitOffset, len(b.Bytes()))
-					moreDataFlag = b.MoreRBSPData()
+					moreDataFlag = moreRBSPData(br)
 				}
 			} else {
-				sliceContext.Slice.Data.MbSkipFlag = flagField()
+				b, err := br.ReadBits(1)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read MbSkipFlag")
+				}
+				sliceContext.Slice.Data.MbSkipFlag = b == 1
 
-				logger.Printf("debug: \tNon-I/SI: Eval MbSkipFlag[%v] %d:%d:%d\n", sliceContext.Slice.Data.MbSkipFlag, b.byteOffset, b.bitOffset, len(b.Bytes()))
 				moreDataFlag = !sliceContext.Slice.Data.MbSkipFlag
 			}
 		}
@@ -660,11 +675,16 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 				if sliceContext.PPS.EntropyCodingMode == 1 {
 					// TODO: ae implementation
 					binarization := NewBinarization("MbFieldDecodingFlag", sliceContext.Slice.Data)
-					binarization.Decode(sliceContext, b, b.Bytes())
+					// TODO: this should take a BitReader where the nil is.
+					binarization.Decode(sliceContext, br, nil)
 
 					logger.Printf("TODO: ae for MbFieldDecodingFlag\n")
 				} else {
-					sliceContext.Slice.Data.MbFieldDecodingFlag = flagField()
+					b, err := br.ReadBits(1)
+					if err != nil {
+						return nil, errors.Wrap(err, "could not read MbFieldDecodingFlag")
+					}
+					sliceContext.Slice.Data.MbFieldDecodingFlag = b == 1
 				}
 			}
 
@@ -674,21 +694,28 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 				binarization := NewBinarization("MbType", sliceContext.Slice.Data)
 				cabac = initCabac(binarization, sliceContext)
 				_ = cabac
-				binarization.Decode(sliceContext, b, b.Bytes())
+				// TODO: remove bytes parameter from this function.
+				binarization.Decode(sliceContext, br, nil)
 				if binarization.PrefixSuffix {
 					logger.Printf("debug: MBType binarization has prefix and suffix\n")
 				}
 				bits := []int{}
 				for binIdx := 0; binarization.IsBinStringMatch(bits); binIdx++ {
-					newBit := b.ReadOneBit()
+					newBit, err := br.ReadBits(1)
+					if err != nil {
+						return nil, errors.Wrap(err, "could not read bit")
+					}
 					if binarization.UseDecodeBypass == 1 {
 						// DecodeBypass
 						logger.Printf("TODO: decodeBypass is set: 9.3.3.2.3")
-						codIRange, codIOffset := initDecodingEngine(sliceContext.Slice.Data.bits.BitReader)
+						codIRange, codIOffset, err := initDecodingEngine(sliceContext.Slice.Data.BitReader)
+						if err != nil {
+							return nil, errors.Wrap(err, "could not initialise decoding engine")
+						}
 						// Initialize the decoder
 						// TODO: When should the suffix of MaxBinIdxCtx be used and when just the prefix?
 						// TODO: When should the suffix of CtxIdxOffset be used?
-						arithmeticDecoder := NewArithmeticDecoding(
+						arithmeticDecoder, err := NewArithmeticDecoding(
 							sliceContext,
 							binarization,
 							CtxIdx(
@@ -699,12 +726,18 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 							codIRange,
 							codIOffset,
 						)
+						if err != nil {
+							return nil, errors.Wrap(err, "error from NewArithmeticDecoding")
+						}
 						// Bypass decoding
-						codIOffset, _ = arithmeticDecoder.DecodeBypass(
+						codIOffset, _, err = arithmeticDecoder.DecodeBypass(
 							sliceContext.Slice.Data,
 							codIRange,
 							codIOffset,
 						)
+						if err != nil {
+							return nil, errors.Wrap(err, "could not DecodeBypass")
+						}
 						// End DecodeBypass
 
 					} else {
@@ -718,10 +751,13 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 						}
 						logger.Printf("debug: MBType ctxIdx for %d is %d\n", binIdx, ctxIdx)
 						// Then 9.3.3.2
-						codIRange, codIOffset := initDecodingEngine(b)
+						codIRange, codIOffset, err := initDecodingEngine(br)
+						if err != nil {
+							return nil, errors.Wrap(err, "error from initDecodingEngine")
+						}
 						logger.Printf("debug: coding engine initialized: %d/%d\n", codIRange, codIOffset)
 					}
-					bits = append(bits, newBit)
+					bits = append(bits, int(newBit))
 				}
 
 				logger.Printf("TODO: ae for MBType\n")
@@ -732,15 +768,22 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 				}
 			}
 			if sliceContext.Slice.Data.MbTypeName == "I_PCM" {
-				for !b.IsByteAligned() {
-					_ = b.NextField("PCMAlignmentZeroBit", 1)
+				for !br.ByteAligned() {
+					_, err := br.ReadBits(1)
+					if err != nil {
+						return nil, errors.Wrap(err, "could not read PCMAlignmentZeroBit")
+					}
 				}
 				// 7-3 p95
 				bitDepthY := 8 + sliceContext.SPS.BitDepthLumaMinus8
 				for i := 0; i < 256; i++ {
+					s, err := br.ReadBits(bitDepthY)
+					if err != nil {
+						return nil, errors.Wrap(err, fmt.Sprintf("could not read PcmSampleLuma[%d]", i))
+					}
 					sliceContext.Slice.Data.PcmSampleLuma = append(
 						sliceContext.Slice.Data.PcmSampleLuma,
-						b.NextField(fmt.Sprintf("PcmSampleLuma[%d]", i), bitDepthY))
+						int(s))
 				}
 				// 9.3.1 p 246
 				// cabac = initCabac(binarization, sliceContext)
@@ -755,9 +798,13 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 
 				bitDepthC := 8 + sliceContext.SPS.BitDepthChromaMinus8
 				for i := 0; i < 2*mbWidthC*mbHeightC; i++ {
+					s, err := br.ReadBits(bitDepthC)
+					if err != nil {
+						return nil, errors.Wrap(err, fmt.Sprintf("could not read PcmSampleChroma[%d]", i))
+					}
 					sliceContext.Slice.Data.PcmSampleChroma = append(
 						sliceContext.Slice.Data.PcmSampleChroma,
-						b.NextField(fmt.Sprintf("PcmSampleChroma[%d]", i), bitDepthC))
+						int(s))
 				}
 				// 9.3.1 p 246
 				// cabac = initCabac(binarization, sliceContext)
@@ -790,14 +837,19 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 						if sliceContext.PPS.EntropyCodingMode == 1 {
 							binarization := NewBinarization("TransformSize8x8Flag", sliceContext.Slice.Data)
 							cabac = initCabac(binarization, sliceContext)
-							binarization.Decode(sliceContext, b, b.Bytes())
+							binarization.Decode(sliceContext, br, nil)
 
 							logger.Println("TODO: ae(v) for TransformSize8x8Flag")
 						} else {
-							sliceContext.Slice.Data.TransformSize8x8Flag = flagField()
+							b, err := br.ReadBits(1)
+							if err != nil {
+								return nil, errors.Wrap(err, "could not read TransformSize8x8Flag")
+							}
+							sliceContext.Slice.Data.TransformSize8x8Flag = b == 1
 						}
 					}
-					MbPred(sliceContext, b, b.Bytes())
+					// TODO: fix nil argument for.
+					MbPred(sliceContext, br, nil)
 				}
 				m, err = MbPartPredMode(sliceContext.Slice.Data, sliceContext.Slice.Data.SliceTypeName, sliceContext.Slice.Data.MbType, 0)
 				if err != nil {
@@ -809,7 +861,8 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 					if sliceContext.PPS.EntropyCodingMode == 1 {
 						binarization := NewBinarization("CodedBlockPattern", sliceContext.Slice.Data)
 						cabac = initCabac(binarization, sliceContext)
-						binarization.Decode(sliceContext, b, b.Bytes())
+						// TODO: fix nil argument.
+						binarization.Decode(sliceContext, br, nil)
 
 						logger.Printf("TODO: ae for CodedBlockPattern\n")
 					} else {
@@ -828,11 +881,16 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 						if sliceContext.PPS.EntropyCodingMode == 1 {
 							binarization := NewBinarization("Transform8x8Flag", sliceContext.Slice.Data)
 							cabac = initCabac(binarization, sliceContext)
-							binarization.Decode(sliceContext, b, b.Bytes())
+							// TODO: fix nil argument.
+							binarization.Decode(sliceContext, br, nil)
 
 							logger.Printf("TODO: ae for TranformSize8x8Flag\n")
 						} else {
-							sliceContext.Slice.Data.TransformSize8x8Flag = flagField()
+							b, err := br.ReadBits(1)
+							if err != nil {
+								return nil, errors.Wrap(err, "coult not read TransformSize8x8Flag")
+							}
+							sliceContext.Slice.Data.TransformSize8x8Flag = b == 1
 						}
 					}
 				}
@@ -845,7 +903,8 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 					if sliceContext.PPS.EntropyCodingMode == 1 {
 						binarization := NewBinarization("MbQpDelta", sliceContext.Slice.Data)
 						cabac = initCabac(binarization, sliceContext)
-						binarization.Decode(sliceContext, b, b.Bytes())
+						// TODO; fix nil argument
+						binarization.Decode(sliceContext, br, nil)
 
 						logger.Printf("TODO: ae for MbQpDelta\n")
 					} else {
@@ -857,8 +916,7 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 
 		} // END MacroblockLayer
 		if sliceContext.PPS.EntropyCodingMode == 0 {
-			logger.Printf("debug: \tNon-I/SI: Again Checking for more sliceContext.Slice.Data %d:%d:%d\n", b.byteOffset, b.bitOffset, len(b.Bytes()))
-			moreDataFlag = b.MoreRBSPData()
+			moreDataFlag = moreRBSPData(br)
 		} else {
 			if sliceContext.Slice.Data.SliceTypeName != "I" && sliceContext.Slice.Data.SliceTypeName != "SI" {
 				if sliceContext.Slice.Data.MbSkipFlag {
@@ -868,12 +926,14 @@ func NewSliceData(sliceContext *SliceContext, b *bits.BitReader) (*SliceData, er
 				}
 			}
 			if mbaffFrameFlag == 1 && currMbAddr%2 == 0 {
-				logger.Printf("debug: \tNon-I/SI: More sliceContext.Slice.Data at currMbAddr[%v] sliceContext.Slice.Data %d:%d:%d\n", currMbAddr, b.byteOffset, b.bitOffset, len(b.Bytes()))
 				moreDataFlag = true
 			} else {
 				// TODO: ae implementation
-				sliceContext.Slice.Data.EndOfSliceFlag = flagField() // ae(nil)
-				logger.Printf("debug: \tNon-I/SI: End of slice[%v] %d:%d:%d\n", sliceContext.Slice.Data.EndOfSliceFlag, b.byteOffset, b.bitOffset, len(b.Bytes()))
+				b, err := br.ReadBits(1)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read EndOfSliceFlag")
+				}
+				sliceContext.Slice.Data.EndOfSliceFlag = b == 1
 				moreDataFlag = !sliceContext.Slice.Data.EndOfSliceFlag
 			}
 		}
@@ -901,13 +961,8 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	} else {
 		header.ChromaArrayType = sps.ChromaFormat
 	}
-	b := &bits.BitReader{bytes: rbsp}
-	flagField := func() bool {
-		if v := b.NextField("", 1); v == 1 {
-			return true
-		}
-		return false
-	}
+	br := bits.NewBitReader(bytes.NewReader(rbsp))
+
 	header.FirstMbInSlice, err = readUe(nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse FirstMbInSlice")
@@ -926,14 +981,26 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	}
 
 	if sps.UseSeparateColorPlane {
-		header.ColorPlaneID = b.NextField("ColorPlaneID", 2)
+		b, err := br.ReadBits(2)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read ColorPlaneID")
+		}
+		header.ColorPlaneID = int(b)
 	}
 	// TODO: See 7.4.3
 	// header.FrameNum = b.NextField("FrameNum", 0)
 	if !sps.FrameMbsOnly {
-		header.FieldPic = flagField()
+		b, err := br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read FieldPic")
+		}
+		header.FieldPic = b == 1
 		if header.FieldPic {
-			header.BottomField = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read BottomField")
+			}
+			header.BottomField = b == 1
 		}
 	}
 	if idrPic {
@@ -943,7 +1010,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 		}
 	}
 	if sps.PicOrderCountType == 0 {
-		header.PicOrderCntLsb = b.NextField("PicOrderCntLsb", sps.Log2MaxPicOrderCntLSBMin4+4)
+		b, err := br.ReadBits(sps.Log2MaxPicOrderCntLSBMin4 + 4)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read PicOrderCntLsb")
+		}
+		header.PicOrderCntLsb = int(b)
+
 		if pps.BottomFieldPicOrderInFramePresent && !header.FieldPic {
 			header.DeltaPicOrderCntBottom, err = readSe(nil)
 			if err != nil {
@@ -971,10 +1043,19 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 		}
 	}
 	if sliceType == "B" {
-		header.DirectSpatialMvPred = flagField()
+		b, err := br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read DirectSpatialMvPred")
+		}
+		header.DirectSpatialMvPred = b == 1
 	}
 	if sliceType == "B" || sliceType == "SP" {
-		header.NumRefIdxActiveOverride = flagField()
+		b, err := br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read NumRefIdxActiveOverride")
+		}
+		header.NumRefIdxActiveOverride = b == 1
+
 		if header.NumRefIdxActiveOverride {
 			header.NumRefIdxL0ActiveMinus1, err = readUe(nil)
 			if err != nil {
@@ -996,7 +1077,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	} else {
 		// 7.3.3.1
 		if header.SliceType%5 != 2 && header.SliceType%5 != 4 {
-			header.RefPicListModificationFlagL0 = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read RefPicListModificationFlagL0")
+			}
+			header.RefPicListModificationFlagL0 = b == 1
+
 			if header.RefPicListModificationFlagL0 {
 				for header.ModificationOfPicNums != 3 {
 					header.ModificationOfPicNums, err = readUe(nil)
@@ -1020,7 +1106,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 
 		}
 		if header.SliceType%5 == 1 {
-			header.RefPicListModificationFlagL1 = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read RefPicListModificationFlagL1")
+			}
+			header.RefPicListModificationFlagL1 = b == 1
+
 			if header.RefPicListModificationFlagL1 {
 				for header.ModificationOfPicNums != 3 {
 					header.ModificationOfPicNums, err = readUe(nil)
@@ -1059,7 +1150,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 			}
 		}
 		for i := 0; i <= header.NumRefIdxL0ActiveMinus1; i++ {
-			header.LumaWeightL0Flag = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read LumaWeightL0Flag")
+			}
+			header.LumaWeightL0Flag = b == 1
+
 			if header.LumaWeightL0Flag {
 				se, err := readSe(nil)
 				if err != nil {
@@ -1074,7 +1170,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 				header.LumaOffsetL0 = append(header.LumaOffsetL0, se)
 			}
 			if header.ChromaArrayType != 0 {
-				header.ChromaWeightL0Flag = flagField()
+				b, err := br.ReadBits(1)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read ChromaWeightL0Flag")
+				}
+				header.ChromaWeightL0Flag = b == 1
+
 				if header.ChromaWeightL0Flag {
 					header.ChromaWeightL0 = append(header.ChromaWeightL0, []int{})
 					header.ChromaOffsetL0 = append(header.ChromaOffsetL0, []int{})
@@ -1096,7 +1197,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 		}
 		if header.SliceType%5 == 1 {
 			for i := 0; i <= header.NumRefIdxL1ActiveMinus1; i++ {
-				header.LumaWeightL1Flag = flagField()
+				b, err := br.ReadBits(1)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read LumaWeightL1Flag")
+				}
+				header.LumaWeightL1Flag = b == 1
+
 				if header.LumaWeightL1Flag {
 					se, err := readSe(nil)
 					if err != nil {
@@ -1111,7 +1217,12 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 					header.LumaOffsetL1 = append(header.LumaOffsetL1, se)
 				}
 				if header.ChromaArrayType != 0 {
-					header.ChromaWeightL1Flag = flagField()
+					b, err := br.ReadBits(1)
+					if err != nil {
+						return nil, errors.Wrap(err, "could not read ChromaWeightL1Flag")
+					}
+					header.ChromaWeightL1Flag = b == 1
+
 					if header.ChromaWeightL1Flag {
 						header.ChromaWeightL1 = append(header.ChromaWeightL1, []int{})
 						header.ChromaOffsetL1 = append(header.ChromaOffsetL1, []int{})
@@ -1136,10 +1247,24 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 	if nalUnit.RefIdc != 0 {
 		// devRefPicMarking()
 		if idrPic {
-			header.NoOutputOfPriorPicsFlag = flagField()
-			header.LongTermReferenceFlag = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read NoOutputOfPriorPicsFlag")
+			}
+			header.NoOutputOfPriorPicsFlag = b == 1
+
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read LongTermReferenceFlag")
+			}
+			header.LongTermReferenceFlag = b == 1
 		} else {
-			header.AdaptiveRefPicMarkingModeFlag = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read AdaptiveRefPicMarkingModeFlag")
+			}
+			header.AdaptiveRefPicMarkingModeFlag = b == 1
+
 			if header.AdaptiveRefPicMarkingModeFlag {
 				header.MemoryManagementControlOperation, err = readUe(nil)
 				if err != nil {
@@ -1187,7 +1312,11 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 
 	if sliceType == "SP" || sliceType == "SI" {
 		if sliceType == "SP" {
-			header.SpForSwitch = flagField()
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read SpForSwitch")
+			}
+			header.SpForSwitch = b == 1
 		}
 		header.SliceQsDelta, err = readSe(nil)
 		if err != nil {
@@ -1213,9 +1342,11 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 		}
 	}
 	if pps.NumSliceGroupsMinus1 > 0 && pps.SliceGroupMapType >= 3 && pps.SliceGroupMapType <= 5 {
-		header.SliceGroupChangeCycle = b.NextField(
-			"SliceGroupChangeCycle",
-			int(math.Ceil(math.Log2(float64(pps.PicSizeInMapUnitsMinus1/pps.SliceGroupChangeRateMinus1+1)))))
+		b, err := br.ReadBits(int(math.Ceil(math.Log2(float64(pps.PicSizeInMapUnitsMinus1/pps.SliceGroupChangeRateMinus1 + 1)))))
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read SliceGruopChangeCycle")
+		}
+		header.SliceGroupChangeCycle = int(b)
 	}
 
 	sliceContext := &SliceContext{
@@ -1226,7 +1357,7 @@ func NewSliceContext(videoStream *VideoStream, nalUnit *NalUnit, rbsp []byte, sh
 			Header: &header,
 		},
 	}
-	sliceContext.Slice.Data, err = NewSliceData(sliceContext, b)
+	sliceContext.Slice.Data, err = NewSliceData(sliceContext, br)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not create slice data")
 	}
