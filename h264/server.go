@@ -9,6 +9,8 @@ import (
 	"net"
 	"os"
 	"os/signal"
+
+	"github.com/ausocean/h264decode/h264/bits"
 )
 
 // InitialNALU indicates the start of a h264 packet
@@ -41,8 +43,9 @@ func handleConnection(connection io.Reader) {
 		panic(err)
 	}
 	streamReader := &H264Reader{
-		Stream:    connection,
-		BitReader: &BitReader{bytes: []byte{}},
+		Stream: connection,
+		// TODO: need to give this an io.Reader, not nil.
+		BitReader: bits.NewBitReader(nil),
 		DebugFile: debugFile,
 	}
 	c := make(chan os.Signal, 1)
