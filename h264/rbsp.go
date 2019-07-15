@@ -29,16 +29,16 @@ var (
 )
 
 // 7.3.2.11
-func rbspTrailingBits(b *bits.BitReader) {
-	rbspStopOneBit := make([]int, 1)
-	if _, err := b.Read(rbspStopOneBit); err != nil {
+func rbspTrailingBits(br *bits.BitReader) {
+	_, err := br.ReadBits(1)
+	if err != nil {
 		fmt.Printf("error reading StopOneBit: %v\n", err)
 	}
 	// 7.2
-	for !b.IsByteAligned() {
+	for !br.ByteAligned() {
 		// RBSPAlignmentZeroBit
-		rbspAlignmentZeroBit := make([]int, 1)
-		if _, err := b.Read(rbspAlignmentZeroBit); err != nil {
+		_, err := br.ReadBits(1)
+		if err != nil {
 			fmt.Printf("error reading AligntmentZeroBit: %v\n", err)
 			break
 		}
