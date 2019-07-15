@@ -31,6 +31,7 @@ const (
 	direct
 	biPred
 	inter
+	naMbPartPredMode
 )
 
 // readUe parses a syntax element of ue(v) descriptor, i.e. an unsigned integer
