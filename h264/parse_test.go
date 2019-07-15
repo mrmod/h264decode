@@ -15,7 +15,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/ausocean/h264decode/h264/bits"
+	"github.com/icza/bitio"
 )
 
 // TestReadUe checks that readUe correctly parses an Exp-Golomb-coded element
@@ -41,7 +41,7 @@ func TestReadUe(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, err := readUe(bits.NewBitReader(bytes.NewReader(test.in)))
+		got, err := readUe(bitio.NewReader(bytes.NewReader(test.in)))
 		if err != nil {
 			t.Fatalf("did not expect error: %v from readUe", err)
 		}
@@ -69,7 +69,7 @@ func TestReadTe(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, err := readTe(bits.NewBitReader(bytes.NewReader(test.in)), test.x)
+		got, err := readTe(bitio.NewReader(bytes.NewReader(test.in)), test.x)
 		if err != test.err {
 			t.Fatalf("did not get expected error for test: %v\nGot: %v\nWant: %v\n", i, err, test.err)
 		}
@@ -99,7 +99,7 @@ func TestReadSe(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, err := readSe(bits.NewBitReader(bytes.NewReader(test.in)))
+		got, err := readSe(bitio.NewReader(bytes.NewReader(test.in)))
 		if err != nil {
 			t.Fatalf("did not expect error: %v from readSe", err)
 		}
@@ -142,7 +142,7 @@ func TestReadMe(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		got, err := readMe(bits.NewBitReader(bytes.NewReader(test.in)), test.cat, test.mpm)
+		got, err := readMe(bitio.NewReader(bytes.NewReader(test.in)), test.cat, test.mpm)
 		if err != test.err {
 			t.Fatalf("did not expect to get error: %v for test: %v", err, i)
 		}
