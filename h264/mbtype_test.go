@@ -50,7 +50,6 @@ func TestMbPartPredMode(t *testing.T) {
 		30: {"SP", 2, nil, predL0, nil},
 		31: {"SP", 3, nil, naMbPartPredMode, errNaMode},
 		32: {"SP", 4, nil, naMbPartPredMode, errNaMode},
-		// TODO: work out what to do with inferred case.
 
 		// Table 7-14 (B-slices).
 		33: {"B", 0, nil, direct, nil},
@@ -77,14 +76,23 @@ func TestMbPartPredMode(t *testing.T) {
 		54: {"B", 21, nil, biPred, nil},
 		55: {"B", 22, nil, naMbPartPredMode, errNaMode},
 
-		// Test some cases where we expect error.
-		// TODO: write some error test cases.
+		// Test some weird cases where we expect error.
+		56: {"O", 0, nil, naMbPartPredMode, errSliceType},
+		57: {"I", 26, nil, naMbPartPredMode, errNaMode},
+		58: {"I", -1, nil, naMbPartPredMode, errNaMode},
+		59: {"SI", 1, nil, naMbPartPredMode, errNaMode},
+
+		// Cases for inferred mbtype.
+		60: {"SP", 5, nil, predL0, nil},
+		61: {"SP", -1, nil, predL0, nil},
+		62: {"B", -1, nil, direct, nil},
+		63: {"B", 23, nil, direct, nil},
 	}
 
 	for i, test := range tests {
 		m, err := MbPartPredMode(test.data, test.sliceType, test.mbType, 0)
 		if err != test.err {
-			t.Errorf("unexpected error %v from test %d", err, i)
+			t.Errorf("unexpected error from test %d.\nGot: %v\nWant: %v\n", i, err, test.err)
 		}
 
 		if m != test.want {
