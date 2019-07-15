@@ -34,161 +34,42 @@ type NalUnit struct {
 	rbsp                         []byte
 }
 
-func isEmulationPreventionThreeByte(b []byte) bool {
-	if len(b) != 3 {
-		return false
-	}
-	return b[0] == byte(0) && b[1] == byte(0) && b[2] == byte(3)
-}
-
 func NalUnitHeaderSvcExtension(nalUnit *NalUnit, br *bits.BitReader) error {
-	// TODO: Annex G
-	b, err := br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read IdrFlag")
-	}
-	nalUnit.IdrFlag = int(b)
-
-	b, err = br.ReadBits(6)
-	if err != nil {
-		return errors.Wrap(err, "could not read PriorityId")
-	}
-	nalUnit.PriorityId = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read NoInterLayerPredFlag")
-	}
-	nalUnit.NoInterLayerPredFlag = int(b)
-
-	b, err = br.ReadBits(3)
-	if err != nil {
-		return errors.Wrap(err, "could not read DependencyId")
-	}
-	nalUnit.DependencyId = int(b)
-
-	b, err = br.ReadBits(4)
-	if err != nil {
-		return errors.Wrap(err, "could not read QualityId")
-	}
-	nalUnit.QualityId = int(b)
-
-	b, err = br.ReadBits(3)
-	if err != nil {
-		return errors.Wrap(err, "could not read TemporalId")
-	}
-	nalUnit.TemporalId = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read UseRefBasePicFlag")
-	}
-	nalUnit.UseRefBasePicFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read DiscardableFlag")
-	}
-	nalUnit.DiscardableFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read OutputFlag")
-	}
-	nalUnit.OutputFlag = int(b)
-
-	b, err = br.ReadBits(2)
-	if err != nil {
-		return errors.Wrap(err, "could not read ReservedThree2Bits")
-	}
-	nalUnit.ReservedThree2Bits = int(b)
-	return nil
+	return readFields(br, []field{
+		{&nalUnit.IdrFlag, "IdrFlag", 1},
+		{&nalUnit.PriorityId, "PriorityId", 6},
+		{&nalUnit.NoInterLayerPredFlag, "NoInterLayerPredFlag", 1},
+		{&nalUnit.DependencyId, "DependencyId", 3},
+		{&nalUnit.QualityId, "QualityId", 4},
+		{&nalUnit.TemporalId, "TemporalId", 3},
+		{&nalUnit.UseRefBasePicFlag, "UseRefBasePicFlag", 1},
+		{&nalUnit.DiscardableFlag, "DiscardableFlag", 1},
+		{&nalUnit.OutputFlag, "OutputFlag", 1},
+		{&nalUnit.ReservedThree2Bits, "ReservedThree2Bits", 2},
+	})
 }
 
 func NalUnitHeader3davcExtension(nalUnit *NalUnit, br *bits.BitReader) error {
-	// TODO: Annex J
-	b, err := br.ReadBits(8)
-	if err != nil {
-		return errors.Wrap(err, "could not read ViewIdx")
-	}
-	nalUnit.ViewIdx = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read DepthFlag")
-	}
-	nalUnit.DepthFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read NonIdrFlag")
-	}
-	nalUnit.NonIdrFlag = int(b)
-
-	b, err = br.ReadBits(3)
-	if err != nil {
-		return errors.Wrap(err, "could not read TemporalId")
-	}
-	nalUnit.TemporalId = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read AnchorPicFlag")
-	}
-	nalUnit.AnchorPicFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read InterViewFlag")
-	}
-	nalUnit.InterViewFlag = int(b)
-	return nil
+	return readFields(br, []field{
+		{&nalUnit.ViewIdx, "ViewIdx", 8},
+		{&nalUnit.DepthFlag, "DepthFlag", 1},
+		{&nalUnit.NonIdrFlag, "NonIdrFlag", 1},
+		{&nalUnit.TemporalId, "TemporalId", 3},
+		{&nalUnit.AnchorPicFlag, "AnchorPicFlag", 1},
+		{&nalUnit.InterViewFlag, "InterViewFlag", 1},
+	})
 }
 
 func NalUnitHeaderMvcExtension(nalUnit *NalUnit, br *bits.BitReader) error {
-	// TODO Annex H
-	b, err := br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read NonIdrFlag")
-	}
-	nalUnit.NonIdrFlag = int(b)
-
-	b, err = br.ReadBits(6)
-	if err != nil {
-		return errors.Wrap(err, "could not read PriorityId")
-	}
-	nalUnit.PriorityId = int(b)
-
-	b, err = br.ReadBits(10)
-	if err != nil {
-		return errors.Wrap(err, "could not read ViewId")
-	}
-	nalUnit.ViewId = int(b)
-
-	b, err = br.ReadBits(3)
-	if err != nil {
-		return errors.Wrap(err, "could not read TemporalId")
-	}
-	nalUnit.TemporalId = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read AnchorPicFlag")
-	}
-	nalUnit.AnchorPicFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read InterViewFlag")
-	}
-	nalUnit.InterViewFlag = int(b)
-
-	b, err = br.ReadBits(1)
-	if err != nil {
-		return errors.Wrap(err, "could not read ReservedOneBit")
-	}
-	nalUnit.ReservedOneBit = int(b)
-	return nil
+	return readFields(br, []field{
+		{&nalUnit.NonIdrFlag, "NonIdrFlag", 1},
+		{&nalUnit.PriorityId, "PriorityId", 6},
+		{&nalUnit.ViewId, "ViewId", 10},
+		{&nalUnit.TemporalId, "TemporalId", 3},
+		{&nalUnit.AnchorPicFlag, "AnchorPicFlag", 1},
+		{&nalUnit.InterViewFlag, "InterViewFlag", 1},
+		{&nalUnit.ReservedOneBit, "ReservedOneBit", 1},
+	})
 }
 
 func (n *NalUnit) RBSP() []byte {
@@ -204,23 +85,14 @@ func NewNalUnit(frame []byte, numBytesInNal int) (*NalUnit, error) {
 	// TODO: pass in actual io.Reader to NewBitReader
 	br := bits.NewBitReader(nil)
 
-	b, err := br.ReadBits(1)
+	err := readFields(br, []field{
+		{&nalUnit.ForbiddenZeroBit, "ForbiddenZeroBit", 1},
+		{&nalUnit.RefIdc, "NalRefIdc", 2},
+		{&nalUnit.Type, "NalUnitType", 5},
+	})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not read ForbiddenZeroBit ")
+		return nil, err
 	}
-	nalUnit.ForbiddenZeroBit = int(b)
-
-	b, err = br.ReadBits(2)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not read RefIdc ")
-	}
-	nalUnit.RefIdc = int(b)
-
-	b, err = br.ReadBits(5)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not read Type")
-	}
-	nalUnit.Type = int(b)
 
 	if nalUnit.Type == 14 || nalUnit.Type == 20 || nalUnit.Type == 21 {
 		if nalUnit.Type != 21 {
@@ -251,20 +123,31 @@ func NewNalUnit(frame []byte, numBytesInNal int) (*NalUnit, error) {
 
 	logger.Printf("debug: found %d byte header. Reading body\n", nalUnit.HeaderBytes)
 	for i := nalUnit.HeaderBytes; i < nalUnit.NumBytes; i++ {
-		next3Bytes, err := br.PeekBytes(3)
+		next3Bytes, err := br.PeekBits(24)
 		if err != nil {
 			logger.Printf("error: while reading next 3 NAL bytes: %v\n", err)
 			break
 		}
 		// Little odd, the err above and the i+2 check might be synonyms
-		if i+2 < nalUnit.NumBytes && isEmulationPreventionThreeByte(next3Bytes) {
-			_b, _ := br.ReadBytes(3)
-			nalUnit.rbsp = append(nalUnit.rbsp, _b[:2]...)
+		if i+2 < nalUnit.NumBytes && next3Bytes == 0x000003 {
+			for j := 0; j < 2; j++ {
+				rbspByte, err := br.ReadBits(8)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read rbspByte")
+				}
+				nalUnit.rbsp = append(nalUnit.rbsp, byte(rbspByte))
+			}
 			i += 2
-			nalUnit.EmulationPreventionThreeByte = _b[2]
+
+			// Read Emulation prevention three byte.
+			eptByte, err := br.ReadBits(8)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read eptByte")
+			}
+			nalUnit.EmulationPreventionThreeByte = byte(eptByte)
 		} else {
-			if _b, err := br.ReadByte(); err == nil {
-				nalUnit.rbsp = append(nalUnit.rbsp, _b)
+			if b, err := br.ReadBits(8); err == nil {
+				nalUnit.rbsp = append(nalUnit.rbsp, byte(b))
 			} else {
 				logger.Printf("error: while reading byte %d of %d nal bytes: %v\n", i, nalUnit.NumBytes, err)
 				break
@@ -274,5 +157,5 @@ func NewNalUnit(frame []byte, numBytesInNal int) (*NalUnit, error) {
 
 	// nalUnit.rbsp = frame[nalUnit.HeaderBytes:]
 	logger.Printf("info: decoded %s NAL with %d RBSP bytes\n", NALUnitType[nalUnit.Type], len(nalUnit.rbsp))
-	return &nalUnit
+	return &nalUnit, nil
 }
