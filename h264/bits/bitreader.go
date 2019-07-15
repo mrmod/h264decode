@@ -71,9 +71,10 @@ type bytePeeker interface {
 // BitReader is a bit reader that provides methods for reading bits from an
 // io.Reader source.
 type BitReader struct {
-	r    bytePeeker
-	n    uint64
-	bits int
+	r     bytePeeker
+	n     uint64
+	bits  int
+	nRead int
 }
 
 // NewBitReader returns a new BitReader.
@@ -102,6 +103,7 @@ func (br *BitReader) ReadBits(n int) (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
+		br.nRead++
 		br.n <<= 8
 		br.n |= uint64(b)
 		br.bits += 8
@@ -154,4 +156,15 @@ func (br *BitReader) PeekBits(n int) (uint64, error) {
 
 	r := (br.n >> uint(bits-n)) & ((1 << uint(n)) - 1)
 	return r, nil
+}
+
+// ByteAligned returns true if the reader position is at the start of a byte,
+// and false otherwise.
+func (br *BitReader) ByteAligned() bool {
+	return br.bits == 0
+}
+
+// BytesRead returns the number of bytes that have been read by the BitReader.
+func (br *BitReader) BytesRead() int {
+	return br.nRead
 }
