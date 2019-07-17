@@ -1,9 +1,11 @@
 package h264
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/ausocean/h264decode/h264/bits"
 	"github.com/pkg/errors"
 )
 
@@ -173,7 +175,7 @@ func debugPacket(name string, packet interface{}) {
 		logger.Printf("debug: \t%#v\n", line)
 	}
 }
-func scalingList(b *BitReader, scalingList []int, sizeOfScalingList int, defaultScalingMatrix []int) error {
+func scalingList(b *bits.BitReader, scalingList []int, sizeOfScalingList int, defaultScalingMatrix []int) error {
 	lastScale := 8
 	nextScale := 8
 	for i := 0; i < sizeOfScalingList; i++ {
@@ -201,7 +203,7 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 	logger.Printf("debug: SPS RBSP %d bytes %d bits\n", len(rbsp), len(rbsp)*8)
 	logger.Printf("debug: \t%#v\n", rbsp[0:8])
 	sps := SPS{}
-	b := &BitReader{bytes: rbsp}
+	br := bits.NewBitReader(bytes.NewReader(rbsp))
 	var err error
 	hrdParameters := func() error {
 		sps.CpbCntMinus1, err = readUe(nil)
@@ -209,8 +211,14 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			return errors.Wrap(err, "could not parse CpbCntMinus1")
 		}
 
-		sps.BitRateScale = b.NextField("BitRateScale", 4)
-		sps.CpbSizeScale = b.NextField("CPBSizeScale", 4)
+		err := readFields(br, []field{
+			{&sps.BitRateScale, "BitRateScale", 4},
+			{&sps.CpbSizeScale, "CpbSizeScale", 4},
+		})
+		if err != nil {
+			return err
+		}
+
 		// SchedSelIdx E1.2
 		for sseli := 0; sseli <= sps.CpbCntMinus1; sseli++ {
 			ue, err := readUe(nil)
@@ -225,29 +233,50 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			}
 			sps.CpbSizeValueMinus1 = append(sps.CpbSizeValueMinus1, ue)
 
-			if v := b.NextField(fmt.Sprintf("CBR[%d]", sseli), 1); v == 1 {
+			if v, _ := br.ReadBits(1); v == 1 {
 				sps.Cbr = append(sps.Cbr, true)
 			} else {
 				sps.Cbr = append(sps.Cbr, false)
 			}
 
-			sps.InitialCpbRemovalDelayLengthMinus1 = b.NextField("InitialCpbRemovalDelayLengthMinus1", 5)
-			sps.CpbRemovalDelayLengthMinus1 = b.NextField("CpbRemovalDelayLengthMinus1", 5)
-			sps.DpbOutputDelayLengthMinus1 = b.NextField("DpbOutputDelayLengthMinus1", 5)
-			sps.TimeOffsetLength = b.NextField("TimeOffsetLength", 5)
+			err = readFields(br,
+				[]field{
+					{&sps.InitialCpbRemovalDelayLengthMinus1, "InitialCpbRemovalDelayLengthMinus1", 5},
+					{&sps.CpbRemovalDelayLengthMinus1, "CpbRemovalDelayLengthMinus1", 5},
+					{&sps.DpbOutputDelayLengthMinus1, "DpbOutputDelayLengthMinus1", 5},
+					{&sps.TimeOffsetLength, "TimeOffsetLength", 5},
+				},
+			)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	}
 
-	sps.Profile = b.NextField("ProfileIDC", 8)
-	sps.Constraint0 = b.NextField("Constraint0", 1)
-	sps.Constraint1 = b.NextField("Constraint1", 1)
-	sps.Constraint2 = b.NextField("Constraint2", 1)
-	sps.Constraint3 = b.NextField("Constraint3", 1)
-	sps.Constraint4 = b.NextField("Constraint4", 1)
-	sps.Constraint5 = b.NextField("Constraint5", 1)
-	_ = b.NextField("ReservedZeroBits", 2)
-	sps.Level = b.NextField("LevelIDC", 8)
+	err = readFields(br,
+		[]field{
+			{&sps.Profile, "ProfileIDC", 8},
+			{&sps.Constraint0, "Constraint0", 1},
+			{&sps.Constraint1, "Constraint1", 1},
+			{&sps.Constraint2, "Constraint2", 1},
+			{&sps.Constraint3, "Constraint3", 1},
+			{&sps.Constraint4, "Constraint4", 1},
+			{&sps.Constraint5, "Constraint5", 1},
+		},
+	)
+
+	_, err = br.ReadBits(2)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read ReservedZeroBits")
+	}
+
+	b, err := br.ReadBits(8)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read Level")
+	}
+	sps.Level = int(b)
+
 	// sps.ID = b.NextField("SPSID", 6) // proper
 	sps.ID, err = readUe(nil)
 	if err != nil {
@@ -264,11 +293,12 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 	// SpecialProfileCase1
 	if isInList(isProfileIDC, sps.Profile) {
 		if sps.ChromaFormat == chroma444 {
-			if v := b.NextField("SeperateColorPlaneFlag", 1); v == 1 {
-				sps.UseSeparateColorPlane = true
-			} else {
-				sps.UseSeparateColorPlane = false
+			// TODO: should probably deal with error here.
+			b, err := br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read UseSeparateColorPlaneFlag")
 			}
+			sps.UseSeparateColorPlane = b == 1
 		}
 
 		sps.BitDepthLumaMinus8, err = readUe(nil)
@@ -281,16 +311,18 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			return nil, errors.Wrap(err, "could not parse BitDepthChromaMinus8")
 		}
 
-		if v := b.NextField("QPrimeYZeroTransformBypassFlag", 1); v == 1 {
-			sps.QPrimeYZeroTransformBypass = true
-		} else {
-			sps.QPrimeYZeroTransformBypass = false
+		b, err := br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read QPrimeYZeroTransformBypass")
 		}
-		if v := b.NextField("SequenceScalingMatrixPresentFlag", 1); v == 1 {
-			sps.SeqScalingMatrixPresent = true
-		} else {
-			sps.SeqScalingMatrixPresent = false
+		sps.QPrimeYZeroTransformBypass = b == 1
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read SeqScalingMatrixPresent")
 		}
+		sps.SeqScalingMatrixPresent = b == 1
+
 		if sps.SeqScalingMatrixPresent {
 			max := 12
 			if sps.ChromaFormat != chroma444 {
@@ -298,15 +330,16 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			}
 			logger.Printf("debug: \tbuilding Scaling matrix for %d elements\n", max)
 			for i := 0; i < max; i++ {
-				if v := b.NextField(fmt.Sprintf("SeqScalingListPresentFlag[%d]", i), 1); v == 1 {
-					sps.SeqScalingList = append(sps.SeqScalingList, true)
-				} else {
-					sps.SeqScalingList = append(sps.SeqScalingList, false)
+				b, err := br.ReadBits(1)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read SeqScalingList")
 				}
+				sps.SeqScalingList = append(sps.SeqScalingList, b == 1)
+
 				if sps.SeqScalingList[i] {
 					if i < 6 {
 						scalingList(
-							b,
+							br,
 							ScalingList4x4[i],
 							16,
 							DefaultScalingMatrix4x4[i])
@@ -314,7 +347,7 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 					} else {
 						// 8x8 Page 76 top
 						scalingList(
-							b,
+							br,
 							ScalingList8x8[i],
 							64,
 							DefaultScalingMatrix8x8[i-6])
@@ -343,11 +376,11 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			return nil, errors.Wrap(err, "could not parse Log2MaxPicOrderCntLSBMin4")
 		}
 	} else if sps.PicOrderCountType == 1 {
-		if v := b.NextField("DeltaPicOrderAlwaysZeroFlag", 1); v == 1 {
-			sps.DeltaPicOrderAlwaysZero = true
-		} else {
-			sps.DeltaPicOrderAlwaysZero = false
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read DeltaPicOrderAlwaysZero")
 		}
+		sps.DeltaPicOrderAlwaysZero = b == 1
 
 		sps.OffsetForNonRefPic, err = readSe(nil)
 		if err != nil {
@@ -381,9 +414,11 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 		return nil, errors.Wrap(err, "could not parse MaxNumRefFrames")
 	}
 
-	if v := b.NextField("GapsInFrameNumValueAllowedFlag", 1); v == 1 {
-		sps.GapsInFrameNumValueAllowed = true
+	b, err = br.ReadBits(1)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read GapsInFrameNumValueAllowed")
 	}
+	sps.GapsInFrameNumValueAllowed = b == 1
 
 	sps.PicWidthInMbsMinus1, err = readUe(nil)
 	if err != nil {
@@ -395,20 +430,28 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 		return nil, errors.Wrap(err, "could not parse PicHeightInMapUnitsMinus1")
 	}
 
-	if v := b.NextField("FrameMbsOnlyFlag", 1); v == 1 {
-		sps.FrameMbsOnly = true
+	b, err = br.ReadBits(1)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read FrameMbsOnly")
 	}
+	sps.FrameMbsOnly = b == 1
+
 	if !sps.FrameMbsOnly {
-		if v := b.NextField("MBAdaptiveFrameFieldFlag", 1); v == 1 {
-			sps.MBAdaptiveFrameField = true
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read MBAdaptiveFrameField")
 		}
+		sps.MBAdaptiveFrameField = b == 1
 	}
-	if v := b.NextField("Direct8x8InferenceFlag", 1); v == 1 {
-		sps.Direct8x8Inference = true
+
+	err = readFlags(br, []flag{
+		{&sps.Direct8x8Inference, "Direct8x8Inference"},
+		{&sps.FrameCropping, "FrameCropping"},
+	})
+	if err != nil {
+		return nil, err
 	}
-	if v := b.NextField("FrameCroppingFlag", 1); v == 1 {
-		sps.FrameCropping = true
-	}
+
 	if sps.FrameCropping {
 		sps.FrameCropLeftOffset, err = readUe(nil)
 		if err != nil {
@@ -430,52 +473,105 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			return nil, errors.Wrap(err, "could not parse FrameCropBottomOffset")
 		}
 	}
-	if v := b.NextField("VUIParametersPresentFlag", 1); v == 1 {
-		sps.VuiParametersPresent = true
+
+	b, err = br.ReadBits(1)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not read VuiParametersPresent")
 	}
+	sps.VuiParametersPresent = b == 1
+
 	if sps.VuiParametersPresent {
 		// vui_parameters
-		if v := b.NextField("AspectRatioInfoPresentFlag", 1); v == 1 {
-			sps.AspectRatioInfoPresent = true
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read AspectRatioInfoPresent")
 		}
+		sps.AspectRatioInfoPresent = b == 1
+
 		if sps.AspectRatioInfoPresent {
-			sps.AspectRatio = b.NextField("AspectRatioIDC", 8)
+			b, err = br.ReadBits(8)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read AspectRatio")
+			}
+			sps.AspectRatio = int(b)
+
 			EXTENDED_SAR := 999
 			if sps.AspectRatio == EXTENDED_SAR {
-				sps.SarWidth = b.NextField("SARWidth", 16)
-				sps.SarHeight = b.NextField("SARHeight", 16)
+				b, err = br.ReadBits(16)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read SarWidth")
+				}
+				sps.SarWidth = int(b)
+
+				b, err = br.ReadBits(16)
+				if err != nil {
+					return nil, errors.Wrap(err, "could not read SarHeight")
+				}
+				sps.SarHeight = int(b)
 			}
 		}
-		if v := b.NextField("OverscanInfoPresentFlag", 1); v == 1 {
-			sps.OverscanInfoPresent = true
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read OverscanInfoPresent")
 		}
+		sps.OverscanInfoPresent = b == 1
+
 		if sps.OverscanInfoPresent {
-			if v := b.NextField("OverscanAppropriateFlag", 1); v == 1 {
-				sps.OverscanAppropriate = true
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read OverscanAppropriate")
 			}
+			sps.OverscanAppropriate = b == 1
 		}
-		if v := b.NextField("VideoSignalPresentFlag", 1); v == 1 {
-			sps.VideoSignalTypePresent = true
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read VideoSignalTypePresent")
 		}
+		sps.VideoSignalTypePresent = b == 1
+
 		if sps.VideoSignalTypePresent {
-			sps.VideoFormat = b.NextField("VideoFormat", 3)
+			b, err = br.ReadBits(3)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read VideoFormat")
+			}
+			sps.VideoFormat = int(b)
 		}
+
 		if sps.VideoSignalTypePresent {
-			if v := b.NextField("VideoFullRangeFlag", 1); v == 1 {
-				sps.VideoFullRange = true
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read VideoFullRange")
 			}
-			if v := b.NextField("ColorDescriptionPresentFlag", 1); v == 1 {
-				sps.ColorDescriptionPresent = true
+			sps.VideoFullRange = b == 1
+
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read ColorDescriptionPresent")
 			}
+			sps.ColorDescriptionPresent = b == 1
+
 			if sps.ColorDescriptionPresent {
-				sps.ColorPrimaries = b.NextField("ColorPrimaries", 8)
-				sps.TransferCharacteristics = b.NextField("TransferCharacteristics", 8)
-				sps.MatrixCoefficients = b.NextField("MatrixCoefficients", 8)
+				err = readFields(br,
+					[]field{
+						{&sps.ColorPrimaries, "ColorPrimaries", 8},
+						{&sps.TransferCharacteristics, "TransferCharacteristics", 8},
+						{&sps.MatrixCoefficients, "MatrixCoefficients", 8},
+					},
+				)
+				if err != nil {
+					return nil, err
+				}
 			}
 		}
-		if v := b.NextField("ChromaLocInfoPresentFlag", 1); v == 1 {
-			sps.ChromaLocInfoPresent = true
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read ChromaLocInfoPresent")
 		}
+		sps.ChromaLocInfoPresent = b == 1
+
 		if sps.ChromaLocInfoPresent {
 			sps.ChromaSampleLocTypeTopField, err = readUe(nil)
 			if err != nil {
@@ -488,28 +584,47 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			}
 		}
 
-		if v := b.NextField("TimingInfoPresentFlag", 1); v == 1 {
-			sps.TimingInfoPresent = true
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read TimingInfoPresent")
 		}
+		sps.TimingInfoPresent = b == 1
+
 		if sps.TimingInfoPresent {
-			sps.NumUnitsInTick = b.NextField("NumUnitsInTick", 32)
-			sps.TimeScale = b.NextField("TimeScale", 32)
-			if v := b.NextField("FixedFramerateFlag", 1); v == 1 {
-				sps.FixedFrameRate = true
+			err := readFields(br, []field{
+				{&sps.NumUnitsInTick, "NumUnitsInTick", 32},
+				{&sps.TimeScale, "TimeScale", 32},
+			})
+			if err != nil {
+				return nil, err
 			}
+
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read FixedFrameRate")
+			}
+			sps.FixedFrameRate = b == 1
 		}
-		if v := b.NextField("NALHRDParametersPresent", 1); v == 1 {
-			sps.NalHrdParametersPresent = true
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read NalHrdParametersPresent")
 		}
+		sps.NalHrdParametersPresent = b == 1
+
 		if sps.NalHrdParametersPresent {
 			err = hrdParameters()
 			if err != nil {
 				return nil, errors.Wrap(err, "could not get hrdParameters")
 			}
 		}
-		if v := b.NextField("VCLHRDParametersPresent", 1); v == 1 {
-			sps.VclHrdParametersPresent = true
+
+		b, err = br.ReadBits(1)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not read VclHrdParametersPresent")
 		}
+		sps.VclHrdParametersPresent = b == 1
+
 		if sps.VclHrdParametersPresent {
 			err = hrdParameters()
 			if err != nil {
@@ -517,20 +632,25 @@ func NewSPS(rbsp []byte, showPacket bool) (*SPS, error) {
 			}
 		}
 		if sps.NalHrdParametersPresent || sps.VclHrdParametersPresent {
-			if v := b.NextField("LowHRDDelayFlag", 1); v == 1 {
-				sps.LowHrdDelay = true
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read LowHrdDelay")
 			}
+			sps.LowHrdDelay = b == 1
 		}
-		if v := b.NextField("PicStructPresentFlag", 1); v == 1 {
-			sps.PicStructPresent = true
-		}
-		if v := b.NextField("BitstreamRestrictionFlag", 1); v == 1 {
-			sps.BitstreamRestriction = true
-		}
+
+		err := readFlags(br, []flag{
+			{&sps.PicStructPresent, "PicStructPresent"},
+			{&sps.BitstreamRestriction, "BitStreamRestriction"},
+		})
+
 		if sps.BitstreamRestriction {
-			if v := b.NextField("MotionVectorsOverPicBoundaries", 1); v == 1 {
-				sps.MotionVectorsOverPicBoundaries = true
+			b, err = br.ReadBits(1)
+			if err != nil {
+				return nil, errors.Wrap(err, "could not read MotionVectorsOverPicBoundaries")
 			}
+			sps.MotionVectorsOverPicBoundaries = b == 1
+
 			sps.MaxBytesPerPicDenom, err = readUe(nil)
 			if err != nil {
 				return nil, errors.Wrap(err, "could not parse MaxBytesPerPicDenom")

@@ -4,22 +4,20 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/ausocean/h264decode/h264/bits"
+	"github.com/pkg/errors"
 )
 
-type BitReader struct {
-	bytes      []byte
-	byteOffset int
-	bitOffset  int
-	bitsRead   int
-	Debug      bool
-}
 type H264Reader struct {
 	IsStarted    bool
 	Stream       io.Reader
-	NalUnits     []*BitReader
+	NalUnits     []*bits.BitReader
 	VideoStreams []*VideoStream
 	DebugFile    *os.File
-	*BitReader
+	bytes        []byte
+	byteOffset   int
+	*bits.BitReader
 }
 
 func (h *H264Reader) BufferToReader(cntBytes int) error {
@@ -60,7 +58,8 @@ func bitVal(bits []int) int {
 
 func (h *H264Reader) Start() {
 	for {
-		nalUnit, _ := h.readNalUnit()
+		// TODO: need to handle error from this.
+		nalUnit, _, _ := h.readNalUnit()
 		switch nalUnit.Type {
 		case naluTypeSPS:
 			// TODO: handle this error
@@ -85,13 +84,15 @@ func (h *H264Reader) Start() {
 	}
 }
 
-func (r *H264Reader) readNalUnit() (*NalUnit, *BitReader) {
+func (r *H264Reader) readNalUnit() (*NalUnit, *bits.BitReader, error) {
 	// Read to start of NAL
 	logger.Printf("debug: Seeking NAL %d start\n", len(r.NalUnits))
-	r.LogStreamPosition()
-	for !isStartSequence(r.Bytes()) {
+
+	// TODO: Fix this.
+	for !isStartSequence(nil) {
 		if err := r.BufferToReader(1); err != nil {
-			return nil, nil
+			// TODO: should this return an error here.
+			return nil, nil, nil
 		}
 	}
 	/*
@@ -109,29 +110,32 @@ func (r *H264Reader) readNalUnit() (*NalUnit, *BitReader) {
 			}
 		}
 	*/
-	_, startOffset, _ := r.StreamPosition()
+	startOffset := r.BytesRead()
 	logger.Printf("debug: Seeking next NAL start\n")
-	r.LogStreamPosition()
 	// Read to start of next NAL
-	_, so, _ := r.StreamPosition()
-	for so == startOffset || !isStartSequence(r.Bytes()) {
-		_, so, _ = r.StreamPosition()
+	so := r.BytesRead()
+	for so == startOffset || !isStartSequence(nil) {
+		so = r.BytesRead()
 		if err := r.BufferToReader(1); err != nil {
-			return nil, nil
+			// TODO: should this return an error here?
+			return nil, nil, nil
 		}
 	}
 	// logger.Printf("debug: PreRewind %#v\n", r.Bytes())
 	// Rewind back the length of the start sequence
 	// r.RewindBytes(4)
 	// logger.Printf("debug: PostRewind %#v\n", r.Bytes())
-	_, endOffset, _ := r.StreamPosition()
+	endOffset := r.BytesRead()
 	logger.Printf("debug: found NAL unit with %d bytes from %d to %d\n", endOffset-startOffset, startOffset, endOffset)
-	nalUnitReader := &BitReader{bytes: r.Bytes()[startOffset:]}
+	nalUnitReader := bits.NewBitReader(nil)
 	r.NalUnits = append(r.NalUnits, nalUnitReader)
-	r.LogStreamPosition()
-	logger.Printf("debug: NAL Header: %#v\n", nalUnitReader.Bytes()[0:8])
-	nalUnit := NewNalUnit(nalUnitReader.Bytes(), len(nalUnitReader.Bytes()))
-	return nalUnit, nalUnitReader
+	// TODO: this should really take an io.Reader rather than []byte. Need to fix nil
+	// once this is fixed.
+	nalUnit, err := NewNalUnit(nil, 0)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "cannot create new nal unit")
+	}
+	return nalUnit, nalUnitReader, nil
 }
 
 func isStartSequence(packet []byte) bool {
@@ -173,32 +177,16 @@ func isEmpty3Byte(buf []byte) bool {
 	return true
 }
 
-func (b *BitReader) Bytes() []byte {
-	return b.bytes
-}
-func (b *BitReader) Fastforward(bits int) {
-	b.bitsRead += bits
-	b.setOffset()
-}
-func (b *BitReader) setOffset() {
-	b.byteOffset = b.bitsRead / 8
-	b.bitOffset = b.bitsRead % 8
-}
-
-// TODO: MoreRBSPData Section 7.2 p 62
-func (b *BitReader) MoreRBSPData() bool {
-	logger.Printf("moreRBSPData: %d [byteO: %d, bitO: %d]\n", len(b.bytes), b.byteOffset, b.bitOffset)
-	if len(b.bytes)-b.byteOffset == 0 {
-		return false
-	}
+// TODO: complete this.
+func moreRBSPData(br *bits.BitReader) bool {
 	// Read until the least significant bit of any remaining bytes
 	// If the least significant bit is 1, that marks the first bit
 	// of the rbspTrailingBits() struct. If the bits read is more
 	// than 0, then there is more RBSP data
-	buf := make([]int, 1)
+	var bits uint64
 	cnt := 0
-	for buf[0] != 1 {
-		if _, err := b.Read(buf); err != nil {
+	for bits != 1 {
+		if _, err := br.ReadBits(8); err != nil {
 			logger.Printf("moreRBSPData error: %v\n", err)
 			return false
 		}
@@ -207,97 +195,36 @@ func (b *BitReader) MoreRBSPData() bool {
 	logger.Printf("moreRBSPData: read %d additional bits\n", cnt)
 	return cnt > 0
 }
-func (b *BitReader) HasMoreData() bool {
-	if b.Debug {
-		logger.Printf("\tHasMoreData: %+v\n", b)
-		logger.Printf("\tHas %d more bytes\n", len(b.bytes)-b.byteOffset)
-	}
-	return len(b.bytes)-b.byteOffset > 0
+
+type field struct {
+	loc  *int
+	name string
+	n    int
 }
 
-func (b *BitReader) IsByteAligned() bool {
-	return b.bitOffset == 0
-}
-
-func (b *BitReader) ReadOneBit() int {
-	buf := make([]int, 1)
-	_, _ = b.Read(buf)
-	return buf[0]
-}
-func (b *BitReader) RewindBits(n int) error {
-	if n > 8 {
-		nBytes := n / 8
-		if err := b.RewindBytes(nBytes); err != nil {
-			return err
+func readFields(br *bits.BitReader, fields []field) error {
+	for _, f := range fields {
+		b, err := br.ReadBits(f.n)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf("could not read %s", f.name))
 		}
-		b.bitsRead -= n
-		b.setOffset()
-		return nil
+		*f.loc = int(b)
 	}
-	b.bitsRead -= n
-	b.setOffset()
 	return nil
 }
 
-func (b *BitReader) RewindBytes(n int) error {
-	if b.byteOffset-n < 0 {
-		return fmt.Errorf("attempted to seek below 0")
-	}
-	b.byteOffset -= n
-	b.bitsRead -= n * 8
-	b.setOffset()
-	return nil
+type flag struct {
+	loc  *bool
+	name string
 }
 
-// Get bytes without advancing
-func (b *BitReader) PeekBytes(n int) ([]byte, error) {
-	if len(b.bytes) >= b.byteOffset+n {
-		return b.bytes[b.byteOffset : b.byteOffset+n], nil
-	}
-	return []byte{}, fmt.Errorf("EOF: not enough bytes to give %d (%d @ offset %d", n, len(b.bytes), b.byteOffset)
-
-}
-
-// io.ByteReader interface
-func (b *BitReader) ReadByte() (byte, error) {
-	if len(b.bytes) > b.byteOffset {
-		bt := b.bytes[b.byteOffset]
-		b.byteOffset += 1
-		return bt, nil
-	}
-	return byte(0), fmt.Errorf("EOF:  no more bytes")
-}
-func (b *BitReader) ReadBytes(n int) ([]byte, error) {
-	buf := []byte{}
-	for i := 0; i < n; i++ {
-		if _b, err := b.ReadByte(); err == nil {
-			buf = append(buf, _b)
-		} else {
-			return buf, err
+func readFlags(br *bits.BitReader, flags []flag) error {
+	for _, f := range flags {
+		b, err := br.ReadBits(1)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf("could not read %s", f.name))
 		}
+		*f.loc = b == 1
 	}
-	return buf, nil
-}
-
-func (b *BitReader) Read(buf []int) (int, error) {
-	return 0, nil
-
-}
-func (b *BitReader) NextField(name string, bits int) int {
-	buf := make([]int, bits)
-	if _, err := b.Read(buf); err != nil {
-		fmt.Printf("error reading %d bits for %s: %v\n", bits, name, err)
-		return -1
-	}
-	if b.Debug {
-		logger.Printf("\t[%s] %d bits = value[%d]\n", name, bits, bitVal(buf))
-	}
-	return bitVal(buf)
-}
-func (b *BitReader) StreamPosition() (int, int, int) {
-	return len(b.bytes), b.byteOffset, b.bitOffset
-}
-
-func (b *BitReader) LogStreamPosition() {
-	logger.Printf("debug: %d byte stream @ byte %d bit %d\n", len(b.bytes), b.byteOffset, b.bitOffset)
+	return nil
 }

@@ -222,3 +222,90 @@ func TestReadOrPeek(t *testing.T) {
 		}
 	}
 }
+
+func TestByteAligned(t *testing.T) {
+	tests := []struct {
+		in   []byte
+		n    []int
+		want bool
+	}{
+		{
+			in:   []byte{0xff},
+			n:    []int{1},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{2},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{3},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{4},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{5},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{6},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{7},
+			want: false,
+		},
+		{
+			in:   []byte{0xff},
+			n:    []int{8},
+			want: true,
+		},
+		{
+			in:   []byte{0xff, 0xff},
+			n:    []int{9},
+			want: false,
+		},
+		{
+			in:   []byte{0xff, 0xff},
+			n:    []int{16},
+			want: true,
+		},
+		{
+			in:   []byte{0xff, 0xff},
+			n:    []int{5, 2},
+			want: false,
+		},
+		{
+			in:   []byte{0xff, 0xff},
+			n:    []int{5, 3},
+			want: true,
+		},
+	}
+
+	for i, test := range tests {
+		br := NewBitReader(bytes.NewReader(test.in))
+
+		// Call ReadBits for each value of n defined in test.
+		for j, n := range test.n {
+			_, err := br.ReadBits(n)
+			if err != nil {
+				t.Fatalf("did not expect error: %v for ReadBits: %d test: %d", err, j, i)
+			}
+		}
+
+		// Now check br.ByteAligned.
+		got := br.ByteAligned()
+		if got != test.want {
+			t.Errorf("did not get expected results from ByteAligned for test: %d\nGot: %v\nWant: %v\n", i, got, test.want)
+		}
+	}
+}
