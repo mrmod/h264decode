@@ -20,6 +20,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// mbPartPredMode represents a macroblock partition prediction mode.
+// Modes are defined as consts below. These modes are in section 7.4.5.
 type mbPartPredMode int8
 
 const (

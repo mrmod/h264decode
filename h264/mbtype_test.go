@@ -1,3 +1,13 @@
+/*
+NAME
+  parse.go
+
+DESCRIPTION
+  mbtype_test.go provides testing for functions provided in mbtype.go.
+
+AUTHORS
+  Saxon Nelson-Milton <saxon@ausocean.org>, The Australian Ocean Laboratory (AusOcean)
+*/
 package h264
 
 import (
