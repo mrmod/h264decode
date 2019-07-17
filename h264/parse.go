@@ -20,6 +20,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// mbPartPredMode represents a macroblock partition prediction mode.
+// Modes are defined as consts below. These modes are in section 7.4.5.
 type mbPartPredMode int8
 
 const (
@@ -31,6 +33,7 @@ const (
 	direct
 	biPred
 	inter
+	naMbPartPredMode
 )
 
 // readUe parses a syntax element of ue(v) descriptor, i.e. an unsigned integer
