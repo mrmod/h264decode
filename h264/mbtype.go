@@ -1,6 +1,8 @@
 package h264
 
-import "fmt"
+import (
+	"errors"
+)
 
 const MB_TYPE_INFERRED = 1000
 
@@ -87,38 +89,51 @@ func MbTypeName(sliceType string, mbType int) string {
 	return sliceTypeName
 }
 
-func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) string {
-	modeName := "UnknownPartPredMode"
+// Errors used by MbPartPredMode.
+var (
+	errNaMode    = errors.New("no mode for given slice and mb type")
+	errPartition = errors.New("partition must be 0")
+	errSliceType = errors.New("bad sliceType")
+)
+
+// MbPartPredMode returns a macroblock partition prediction mode for the given
+// slice data, slice type, macroblock type and partition, consistent with tables
+// 7-11, 7-12, 7-13 and 7-14 from the specifications.
+func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) (mbPartPredMode, error) {
 	if partition == 0 {
 		switch sliceType {
 		case "I":
 			if mbType == 0 {
 				if data.TransformSize8x8Flag {
-					return "Intra_8x8"
+					return intra8x8, nil
 				}
-				return "Intra_4x4"
+				return intra4x4, nil
 			}
 			if mbType > 0 && mbType < 25 {
-				return "Intra_16x16"
+				return intra16x16, nil
 			}
-			modeName = "I_PCM"
-
+			return naMbPartPredMode, errNaMode
 		case "SI":
-			modeName = "Intra_4x4"
+			if mbType != 0 {
+				return naMbPartPredMode, errNaMode
+			}
+			return intra4x4, nil
 		case "P":
 			fallthrough
 		case "SP":
 			if mbType >= 0 && mbType < 3 {
-				modeName = "Pred_L0"
+				return predL0, nil
 			} else if mbType == 3 || mbType == 4 {
-				modeName = fmt.Sprintf("Na%sSliceMode", sliceType)
+				return naMbPartPredMode, errNaMode
 			} else {
-				modeName = "Pred_L0"
+				return predL0, nil
 			}
 		case "B":
 			switch mbType {
 			case 0:
-				modeName = "Direct"
+				return direct, nil
+			case 3:
+				return biPred, nil
 			case 1:
 				fallthrough
 			case 4:
@@ -132,7 +147,7 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) st
 			case 12:
 				fallthrough
 			case 13:
-				modeName = "Pred_L0"
+				return predL0, nil
 			case 2:
 				fallthrough
 			case 6:
@@ -146,18 +161,18 @@ func MbPartPredMode(data *SliceData, sliceType string, mbType, partition int) st
 			case 14:
 				fallthrough
 			case 15:
-				modeName = "Pred_L1"
+				return predL1, nil
 			case 22:
-				modeName = "NaBSliceMode"
+				return naMbPartPredMode, errNaMode
 			default:
 				if mbType > 15 && mbType < 22 {
-					modeName = "BiPred"
+					return biPred, nil
 				}
-				modeName = "Direct"
+				return direct, nil
 			}
-
+		default:
+			return naMbPartPredMode, errSliceType
 		}
-
 	}
-	return modeName
+	return naMbPartPredMode, errPartition
 }

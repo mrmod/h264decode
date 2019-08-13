@@ -1,8 +1,17 @@
 package h264
 
-// 9-44
-// [pStateIdx][]int{qCodIRangeIdx}
-var rangeTabLPS = map[int][]int{
+import "errors"
+
+// Number of columns and rows for rangeTabLPS.
+const (
+	rangeTabLPSColumns = 4
+	rangeTabLPSRows    = 64
+)
+
+// rangeTabLPS provides values of codIRangeLPS as defined in section 9.3.3.2.1.1,
+// tab 9-44. Rows correspond to pStateIdx, and columns to qCodIRangeIdx, i.e.
+// codIRangeLPS = rangeTabLPS[pStateIdx][qCodIRangeIdx].
+var rangeTabLPS = [rangeTabLPSRows][rangeTabLPSColumns]int{
 	0:  {128, 176, 208, 240},
 	1:  {128, 167, 197, 227},
 	2:  {128, 158, 187, 216},
@@ -67,4 +76,25 @@ var rangeTabLPS = map[int][]int{
 	61: {6, 7, 9, 10},
 	62: {6, 7, 8, 9},
 	63: {2, 2, 2, 2},
+}
+
+// Errors returnable by retCodIRangeLPS.
+var (
+	errPStateIdx     = errors.New("invalid pStateIdx")
+	errQCodIRangeIdx = errors.New("invalid qCodIRangeIdx")
+)
+
+// retCodIRangeLPS retrieves the codIRangeLPS for a given pStateIdx and
+// qCodIRangeIdx using the rangeTabLPS as specified in section 9.3.3.2.1.1,
+// tab 9-44.
+func retCodIRangeLPS(pStateIdx, qCodIRangeIdx int) (int, error) {
+	if pStateIdx < 0 || rangeTabLPSRows <= pStateIdx {
+		return 0, errPStateIdx
+	}
+
+	if qCodIRangeIdx < 0 || rangeTabLPSColumns <= qCodIRangeIdx {
+		return 0, errQCodIRangeIdx
+	}
+
+	return rangeTabLPS[pStateIdx][qCodIRangeIdx], nil
 }

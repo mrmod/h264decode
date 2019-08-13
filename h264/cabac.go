@@ -1,5 +1,10 @@
 package h264
 
+import (
+	"github.com/ausocean/h264decode/h264/bits"
+	"github.com/pkg/errors"
+)
+
 const (
 	NaCtxId            = 10000
 	NA_SUFFIX          = -1
@@ -30,14 +35,14 @@ func YOffset(yRefMin16, refMbH int) int {
 }
 func MbWidthC(sps *SPS) int {
 	mbWidthC := 16 / SubWidthC(sps)
-	if sps.ChromaFormat == 0 || sps.UseSeparateColorPlane {
+	if sps.ChromaFormat == chromaMonochrome || sps.UseSeparateColorPlane {
 		mbWidthC = 0
 	}
 	return mbWidthC
 }
 func MbHeightC(sps *SPS) int {
 	mbHeightC := 16 / SubHeightC(sps)
-	if sps.ChromaFormat == 0 || sps.UseSeparateColorPlane {
+	if sps.ChromaFormat == chromaMonochrome || sps.UseSeparateColorPlane {
 		mbHeightC = 0
 	}
 	return mbHeightC
@@ -95,7 +100,7 @@ func CondTermFlag(mbAddr, mbSkipFlag int) int {
 }
 
 // s9.3.3 p 278: Returns the value of the syntax element
-func (bin *Binarization) Decode(sliceContext *SliceContext, b *BitReader, rbsp []byte) {
+func (bin *Binarization) Decode(sliceContext *SliceContext, b *bits.BitReader, rbsp []byte) {
 	if bin.SyntaxElement == "MbType" {
 		bin.binString = binIdxMbMap[sliceContext.Slice.Data.SliceTypeName][sliceContext.Slice.Data.MbType]
 	} else {
@@ -179,118 +184,118 @@ func initCabac(binarization *Binarization, context *SliceContext) *CABAC {
 // {"SliceTypeName": {MbTypeCode: []BinString}}
 var (
 	binIdxMbMap = map[string]map[int][]int{
-		"I": map[int][]int{
-			0:  []int{0},
-			1:  []int{1, 0, 0, 0, 0, 0},
-			2:  []int{1, 0, 0, 0, 0, 1},
-			3:  []int{1, 0, 0, 0, 1, 0},
-			4:  []int{1, 0, 0, 0, 1, 1},
-			5:  []int{1, 0, 0, 1, 0, 0, 0},
-			6:  []int{1, 0, 0, 1, 0, 0, 1},
-			7:  []int{1, 0, 0, 1, 0, 1, 0},
-			8:  []int{1, 0, 0, 1, 0, 1, 1},
-			9:  []int{1, 0, 0, 1, 1, 0, 0},
-			10: []int{1, 0, 0, 1, 1, 0, 1},
-			11: []int{1, 0, 0, 1, 1, 1, 0},
-			12: []int{1, 0, 0, 1, 1, 1, 1},
-			13: []int{1, 0, 1, 0, 0, 0},
-			14: []int{1, 0, 1, 0, 0, 1},
-			15: []int{1, 0, 1, 0, 1, 0},
-			16: []int{1, 0, 1, 0, 1, 1},
-			17: []int{1, 0, 1, 1, 0, 0, 0},
-			18: []int{1, 0, 1, 1, 0, 0, 1},
-			19: []int{1, 0, 1, 1, 0, 1, 0},
-			20: []int{1, 0, 1, 1, 0, 1, 1},
-			21: []int{1, 0, 1, 1, 1, 0, 0},
-			22: []int{1, 0, 1, 1, 1, 0, 1},
-			23: []int{1, 0, 1, 1, 1, 1, 0},
-			24: []int{1, 0, 1, 1, 1, 1, 1},
-			25: []int{1, 1},
+		"I": {
+			0:  {0},
+			1:  {1, 0, 0, 0, 0, 0},
+			2:  {1, 0, 0, 0, 0, 1},
+			3:  {1, 0, 0, 0, 1, 0},
+			4:  {1, 0, 0, 0, 1, 1},
+			5:  {1, 0, 0, 1, 0, 0, 0},
+			6:  {1, 0, 0, 1, 0, 0, 1},
+			7:  {1, 0, 0, 1, 0, 1, 0},
+			8:  {1, 0, 0, 1, 0, 1, 1},
+			9:  {1, 0, 0, 1, 1, 0, 0},
+			10: {1, 0, 0, 1, 1, 0, 1},
+			11: {1, 0, 0, 1, 1, 1, 0},
+			12: {1, 0, 0, 1, 1, 1, 1},
+			13: {1, 0, 1, 0, 0, 0},
+			14: {1, 0, 1, 0, 0, 1},
+			15: {1, 0, 1, 0, 1, 0},
+			16: {1, 0, 1, 0, 1, 1},
+			17: {1, 0, 1, 1, 0, 0, 0},
+			18: {1, 0, 1, 1, 0, 0, 1},
+			19: {1, 0, 1, 1, 0, 1, 0},
+			20: {1, 0, 1, 1, 0, 1, 1},
+			21: {1, 0, 1, 1, 1, 0, 0},
+			22: {1, 0, 1, 1, 1, 0, 1},
+			23: {1, 0, 1, 1, 1, 1, 0},
+			24: {1, 0, 1, 1, 1, 1, 1},
+			25: {1, 1},
 		},
 		// Table 9-37
-		"P": map[int][]int{
-			0:  []int{0, 0, 0},
-			1:  []int{0, 1, 1},
-			2:  []int{0, 1, 0},
-			3:  []int{0, 0, 1},
-			4:  []int{},
-			5:  []int{1},
-			6:  []int{1},
-			7:  []int{1},
-			8:  []int{1},
-			9:  []int{1},
-			10: []int{1},
-			11: []int{1},
-			12: []int{1},
-			13: []int{1},
-			14: []int{1},
-			15: []int{1},
-			16: []int{1},
-			17: []int{1},
-			18: []int{1},
-			19: []int{1},
-			20: []int{1},
-			21: []int{1},
-			22: []int{1},
-			23: []int{1},
-			24: []int{1},
-			25: []int{1},
-			26: []int{1},
-			27: []int{1},
-			28: []int{1},
-			29: []int{1},
-			30: []int{1},
+		"P": {
+			0:  {0, 0, 0},
+			1:  {0, 1, 1},
+			2:  {0, 1, 0},
+			3:  {0, 0, 1},
+			4:  {},
+			5:  {1},
+			6:  {1},
+			7:  {1},
+			8:  {1},
+			9:  {1},
+			10: {1},
+			11: {1},
+			12: {1},
+			13: {1},
+			14: {1},
+			15: {1},
+			16: {1},
+			17: {1},
+			18: {1},
+			19: {1},
+			20: {1},
+			21: {1},
+			22: {1},
+			23: {1},
+			24: {1},
+			25: {1},
+			26: {1},
+			27: {1},
+			28: {1},
+			29: {1},
+			30: {1},
 		},
 		// Table 9-37
-		"SP": map[int][]int{
-			0:  []int{0, 0, 0},
-			1:  []int{0, 1, 1},
-			2:  []int{0, 1, 0},
-			3:  []int{0, 0, 1},
-			4:  []int{},
-			5:  []int{1},
-			6:  []int{1},
-			7:  []int{1},
-			8:  []int{1},
-			9:  []int{1},
-			10: []int{1},
-			11: []int{1},
-			12: []int{1},
-			13: []int{1},
-			14: []int{1},
-			15: []int{1},
-			16: []int{1},
-			17: []int{1},
-			18: []int{1},
-			19: []int{1},
-			20: []int{1},
-			21: []int{1},
-			22: []int{1},
-			23: []int{1},
-			24: []int{1},
-			25: []int{1},
-			26: []int{1},
-			27: []int{1},
-			28: []int{1},
-			29: []int{1},
-			30: []int{1},
+		"SP": {
+			0:  {0, 0, 0},
+			1:  {0, 1, 1},
+			2:  {0, 1, 0},
+			3:  {0, 0, 1},
+			4:  {},
+			5:  {1},
+			6:  {1},
+			7:  {1},
+			8:  {1},
+			9:  {1},
+			10: {1},
+			11: {1},
+			12: {1},
+			13: {1},
+			14: {1},
+			15: {1},
+			16: {1},
+			17: {1},
+			18: {1},
+			19: {1},
+			20: {1},
+			21: {1},
+			22: {1},
+			23: {1},
+			24: {1},
+			25: {1},
+			26: {1},
+			27: {1},
+			28: {1},
+			29: {1},
+			30: {1},
 		},
 		// TODO: B Slice table 9-37
 	}
 
 	// Map of SliceTypeName[SubMbType][]int{binString}
 	binIdxSubMbMap = map[string]map[int][]int{
-		"P": map[int][]int{
-			0: []int{1},
-			1: []int{0, 0},
-			2: []int{0, 1, 1},
-			3: []int{0, 1, 0},
+		"P": {
+			0: {1},
+			1: {0, 0},
+			2: {0, 1, 1},
+			3: {0, 1, 0},
 		},
-		"SP": map[int][]int{
-			0: []int{1},
-			1: []int{0, 0},
-			2: []int{0, 1, 1},
-			3: []int{0, 1, 0},
+		"SP": {
+			0: {1},
+			1: {0, 0},
+			2: {0, 1, 1},
+			3: {0, 1, 0},
 		},
 		// TODO: B slice table 9-38
 	}
@@ -436,23 +441,29 @@ func (b *Binarization) IsBinStringMatch(bits []int) bool {
 }
 
 // 9.3.1.2: output is codIRange and codIOffset
-func initDecodingEngine(bitReader *BitReader) (int, int) {
+func initDecodingEngine(bitReader *bits.BitReader) (int, int, error) {
 	logger.Printf("debug: initializing arithmetic decoding engine\n")
-	bitReader.LogStreamPosition()
 	codIRange := 510
-	codIOffset := bitReader.NextField("Initial CodIOffset", 9)
+	codIOffset, err := bitReader.ReadBits(9)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not read codIOffset")
+	}
 	logger.Printf("debug: codIRange: %d :: codIOffsset: %d\n", codIRange, codIOffset)
-	return codIRange, codIOffset
+	return codIRange, int(codIOffset), nil
 }
 
 // 9.3.3.2: output is value of the bin
-func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ctxIdx, codIRange, codIOffset int) ArithmeticDecoding {
+func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ctxIdx, codIRange, codIOffset int) (ArithmeticDecoding, error) {
 	a := ArithmeticDecoding{Context: context, Binarization: binarization}
 	logger.Printf("debug: decoding bypass %d, for ctx %d\n", binarization.UseDecodeBypass, ctxIdx)
 	// TODO: Implement
 	if binarization.UseDecodeBypass == 1 {
 		// TODO: 9.3.3.2.3 : DecodeBypass()
-		codIOffset, a.BinVal = a.DecodeBypass(context.Slice.Data, codIRange, codIOffset)
+		var err error
+		codIOffset, a.BinVal, err = a.DecodeBypass(context.Slice.Data, codIRange, codIOffset)
+		if err != nil {
+			return ArithmeticDecoding{}, errors.Wrap(err, "error from DecodeBypass getting codIOffset and BinVal")
+		}
 
 	} else if binarization.UseDecodeBypass == 0 && ctxIdx == 276 {
 		// TODO: 9.3.3.2.4 : DecodeTerminate()
@@ -460,53 +471,64 @@ func NewArithmeticDecoding(context *SliceContext, binarization *Binarization, ct
 		// TODO: 9.3.3.2.1 : DecodeDecision()
 	}
 	a.BinVal = -1
-	return a
+	return a, nil
 }
 
 // 9.3.3.2.3
 // Invoked when bypassFlag is equal to 1
-func (a ArithmeticDecoding) DecodeBypass(sliceData *SliceData, codIRange, codIOffset int) (int, int) {
+func (a ArithmeticDecoding) DecodeBypass(sliceData *SliceData, codIRange, codIOffset int) (int, int, error) {
 	// Decoded value binVal
 	codIOffset = codIOffset << uint(1)
 	// TODO: Concurrency check
 	// TODO: Possibly should be codIOffset | ReadOneBit
-	codIOffset = codIOffset << uint(sliceData.BitReader.ReadOneBit())
+	shift, err := sliceData.BitReader.ReadBits(1)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "coult not read shift bit from sliceData.")
+	}
+	codIOffset = codIOffset << uint(shift)
 	if codIOffset >= codIRange {
 		a.BinVal = 1
 		codIOffset -= codIRange
 	} else {
 		a.BinVal = 0
 	}
-	return codIOffset, a.BinVal
+	return codIOffset, a.BinVal, nil
 }
 
 // 9.3.3.2.4
 // Decodes endOfSliceFlag and I_PCM
 // Returns codIRange, codIOffSet, decoded value of binVal
-func (a ArithmeticDecoding) DecodeTerminate(sliceData *SliceData, codIRange, codIOffset int) (int, int, int) {
+func (a ArithmeticDecoding) DecodeTerminate(sliceData *SliceData, codIRange, codIOffset int) (int, int, int, error) {
 	codIRange -= 2
 	if codIOffset >= codIRange {
 		a.BinVal = 1
 		// Terminate CABAC decoding, last bit inserted into codIOffset is = 1
 		// this is now also the rbspStopOneBit
 		// TODO: How is this denoting termination?
-		return codIRange, codIOffset, a.BinVal
+		return codIRange, codIOffset, a.BinVal, nil
 	}
 	a.BinVal = 0
-	codIRange, codIOffset = a.RenormD(sliceData, codIRange, codIOffset)
-
-	return codIRange, codIOffset, a.BinVal
+	var err error
+	codIRange, codIOffset, err = a.RenormD(sliceData, codIRange, codIOffset)
+	if err != nil {
+		return 0, 0, 0, errors.Wrap(err, "error from RenormD")
+	}
+	return codIRange, codIOffset, a.BinVal, nil
 }
 
 // 9.3.3.2.2 Renormalization process of ADecEngine
 // Returns codIRange, codIOffset
-func (a ArithmeticDecoding) RenormD(sliceData *SliceData, codIRange, codIOffset int) (int, int) {
+func (a ArithmeticDecoding) RenormD(sliceData *SliceData, codIRange, codIOffset int) (int, int, error) {
 	if codIRange >= 256 {
-		return codIRange, codIOffset
+		return codIRange, codIOffset, nil
 	}
 	codIRange = codIRange << uint(1)
 	codIOffset = codIOffset << uint(1)
-	codIOffset = codIOffset | sliceData.BitReader.ReadOneBit()
+	bit, err := sliceData.BitReader.ReadBits(1)
+	if err != nil {
+		return 0, 0, errors.Wrap(err, "could not read bit from sliceData")
+	}
+	codIOffset = codIOffset | int(bit)
 	return a.RenormD(sliceData, codIRange, codIOffset)
 }
 
@@ -518,13 +540,16 @@ type ArithmeticDecoding struct {
 
 // 9.3.3.2.1
 // returns: binVal, updated codIRange, updated codIOffset
-func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (int, int, int) {
+func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (int, int, int, error) {
 	var binVal int
 	cabac := initCabac(a.Binarization, a.Context)
 	// Derivce codIRangeLPS
 	qCodIRangeIdx := (codIRange >> 6) & 3
 	pStateIdx := cabac.PStateIdx
-	codIRangeLPS := rangeTabLPS[pStateIdx][qCodIRangeIdx]
+	codIRangeLPS, err := retCodIRangeLPS(pStateIdx, qCodIRangeIdx)
+	if err != nil {
+		return 0, 0, 0, errors.Wrap(err, "could not get codIRangeLPS from retCodIRangeLPS")
+	}
 
 	codIRange = codIRange - codIRangeLPS
 	if codIOffset >= codIRange {
@@ -536,7 +561,7 @@ func (a ArithmeticDecoding) BinaryDecision(ctxIdx, codIRange, codIOffset int) (i
 	}
 
 	// TODO: Do StateTransition and then RenormD happen here? See: 9.3.3.2.1
-	return binVal, codIRange, codIOffset
+	return binVal, codIRange, codIOffset, nil
 }
 
 // 9.3.3.2.1.1
@@ -552,11 +577,34 @@ func (c *CABAC) StateTransitionProcess(binVal int) {
 	}
 }
 
+var ctxIdxLookup = map[int]map[int]int{
+	3:  {0: NaCtxId, 1: 276, 2: 3, 3: 4, 4: NaCtxId, 5: NaCtxId},
+	14: {0: 0, 1: 1, 2: NaCtxId},
+	17: {0: 0, 1: 276, 2: 1, 3: 2, 4: NaCtxId},
+	27: {0: NaCtxId, 1: 3, 2: NaCtxId},
+	32: {0: 0, 1: 276, 2: 1, 3: 2, 4: NaCtxId},
+	36: {2: NaCtxId, 3: 3, 4: 3, 5: 3},
+	40: {0: NaCtxId},
+	47: {0: NaCtxId, 1: 3, 2: 4, 3: 5},
+	54: {0: NaCtxId, 1: 4},
+	64: {0: NaCtxId, 1: 3, 2: 3},
+	69: {0: 0, 1: 0, 2: 0},
+	77: {0: NaCtxId, 1: NaCtxId},
+}
+
 // 9.3.3.1
 // Returns ctxIdx
 func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 	ctxIdx := NaCtxId
 	// table 9-39
+	c, ok := ctxIdxLookup[ctxIdxOffset]
+	if ok {
+		v, ok := c[binIdx]
+		if ok {
+			return v
+		}
+	}
+
 	switch ctxIdxOffset {
 	case 0:
 		if binIdx != 0 {
@@ -564,22 +612,7 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 		}
 		// 9.3.3.1.1.3
 	case 3:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.3
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 3
-		case 3:
-			ctxIdx = 4
-		case 4:
-			// 9.3.3.1.2
-		case 5:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 7
-		}
+		return 7
 	case 11:
 		if binIdx != 0 {
 			return NaCtxId
@@ -587,34 +620,11 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 
 		// 9.3.3.1.1.3
 	case 14:
-		if binIdx == 0 {
-			ctxIdx = 0
-		}
-		if binIdx == 1 {
-			ctxIdx = 1
-		}
-		if binIdx == 2 {
-			// 9.3.3.1.2
-		}
 		if binIdx > 2 {
 			return NaCtxId
 		}
 	case 17:
-		switch binIdx {
-		case 0:
-			ctxIdx = 0
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 1
-		case 3:
-			ctxIdx = 2
-		case 4:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 3
-		}
-
+		return 3
 	case 21:
 		if binIdx < 3 {
 			ctxIdx = binIdx
@@ -622,69 +632,20 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 			return NaCtxId
 		}
 	case 24:
-		if binIdx != 0 {
-			return NaCtxId
-		}
 		// 9.3.3.1.1.1
 	case 27:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.3
-		case 1:
-			ctxIdx = 3
-		case 2:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 5
-		}
+		return 5
 	case 32:
-		switch binIdx {
-		case 0:
-			ctxIdx = 0
-		case 1:
-			ctxIdx = 276
-		case 2:
-			ctxIdx = 1
-		case 3:
-			ctxIdx = 2
-		case 4:
-			// 9.3.3.1.2
-		default:
-			ctxIdx = 3
-		}
+		return 3
 	case 36:
 		if binIdx == 0 || binIdx == 1 {
 			ctxIdx = binIdx
 		}
-		if binIdx == 2 {
-			// 9.3.3.1.2
-		}
-		if binIdx > 2 && binIdx < 6 {
-			ctxIdx = 3
-		}
-
 	case 40:
 		fallthrough
 	case 47:
-		switch binIdx {
-		case 0:
-			// 9.3.3.1.1.7
-		case 1:
-			ctxIdx = 3
-		case 2:
-			ctxIdx = 4
-		case 3:
-			ctxIdx = 5
-		default:
-			ctxIdx = 6
-		}
+		return 6
 	case 54:
-		if binIdx == 0 {
-			// 9.3.3.1.1.6
-		}
-		if binIdx == 1 {
-			ctxIdx = 4
-		}
 		if binIdx > 1 {
 			ctxIdx = 5
 		}
@@ -699,49 +660,21 @@ func CtxIdx(binIdx, maxBinIdxCtx, ctxIdxOffset int) int {
 			ctxIdx = 3
 		}
 	case 64:
-		if binIdx == 0 {
-			// 9.3.3.1.1.8
-		} else if binIdx == 1 || binIdx == 2 {
-			ctxIdx = 3
-		} else {
-			return NaCtxId
-		}
+		return NaCtxId
 	case 68:
 		if binIdx != 0 {
 			return NaCtxId
 		}
 		ctxIdx = 0
 	case 69:
-		if binIdx >= 0 && binIdx < 3 {
-			ctxIdx = 0
-		}
 		return NaCtxId
 	case 70:
 		if binIdx != 0 {
 			return NaCtxId
 		}
 		// 9.3.3.1.1.2
-	case 73:
-		switch binIdx {
-		case 0:
-			fallthrough
-		case 1:
-			fallthrough
-		case 2:
-			fallthrough
-		case 3:
-			// 9.3.3.1.1.4
-		default:
-			return NaCtxId
-		}
 	case 77:
-		if binIdx == 0 {
-			// 9.3.3.1.1.4
-		} else if binIdx == 1 {
-			// 9.3.3.1.1.4
-		} else {
-			return NaCtxId
-		}
+		return NaCtxId
 	case 276:
 		if binIdx != 0 {
 			return NaCtxId

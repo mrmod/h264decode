@@ -1,0 +1,4 @@
+github.com/icza/bitio v0.0.0-20180221120200-b25b30b42508 h1:2LdkN1icT8cEFyB95fUbPE0TmQL9ZOjUv9MNJ1kg3XE=
+github.com/icza/bitio v0.0.0-20180221120200-b25b30b42508/go.mod h1:1+iKpsBoI5fsqBTrjxjM81vidVQcxXCmDrM9vc6EU2w=
+github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
+github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
