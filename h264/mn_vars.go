@@ -11,7 +11,7 @@ var (
 	// 0-39 : MB_Type
 	// Maybe mapping all values in the range -128 to 128 to
 	// a list of tuples for input vars would be less verbose
-	// map[ctxIdx]MN
+	// map[ctxIdx][cabacInitIdc]MN
 	MNVars = map[int]map[int]MN{
 		0:  map[int]MN{NoCabacInitIdc: MN{20, -15}},
 		1:  map[int]MN{NoCabacInitIdc: MN{2, 54}},

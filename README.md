@@ -33,6 +33,10 @@ A stream is read sequentially dropping each NAL into a struct with access to the
 
 * Make use of initCabac (initialized CABACs)
 
+# The decoder
+
+This is a High Profile H.264 decoder.
+
 # Background
 
 The last point was and is the entire driving force behind this project: To decode a single frame to an image and begin doing computer vision tasks on it. A while back, this project was started to keep an eye on rodents moving their way around various parts of our house and property. What was supposed to happen was motion detected from one-frame to another of an MJPEG stream would trigger capturing the stream. Analyzing the stream, even down at 24 fps, caused captures to be triggered too late. When it was triggered, there was so much blur in the resulting captured stream, it wasn't very watchable.

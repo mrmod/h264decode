@@ -3,6 +3,10 @@ package h264
 import "fmt"
 import "strings"
 
+const (
+	LEVEL_LIMIT = 41 // table A-1: 4.1 is the limit of raspberry pi b+, 4.2 is blu-ray
+)
+
 // Specification Page 43 7.3.2.1.1
 // Range is always inclusive
 // XRange is always exclusive
@@ -189,11 +193,13 @@ func scalingList(b *BitReader, scalingList []int, sizeOfScalingList int, default
 		lastScale = scalingList[i]
 	}
 }
+
 func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	logger.Printf("debug: SPS RBSP %d bytes %d bits\n", len(rbsp), len(rbsp)*8)
 	logger.Printf("debug: \t%#v\n", rbsp[0:8])
 	sps := SPS{}
 	b := &BitReader{bytes: rbsp}
+	// TODO: Extract hrdParameters
 	hrdParameters := func() {
 		sps.CpbCntMinus1 = ue(b.golomb())
 		sps.BitRateScale = b.NextField("BitRateScale", 4)
@@ -215,6 +221,8 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 		}
 	}
 	sps.Profile = b.NextField("ProfileIDC", 8)
+	logger.Printf("debug: Using SPS Profile IDC %d", sps.Profile)
+
 	sps.Constraint0 = b.NextField("Constraint0", 1)
 	sps.Constraint1 = b.NextField("Constraint1", 1)
 	sps.Constraint2 = b.NextField("Constraint2", 1)
@@ -226,6 +234,11 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	// sps.ID = b.NextField("SPSID", 6) // proper
 	sps.ID = ue(b.golomb())
 	sps.ChromaFormat = ue(b.golomb())
+	if sps.ChromaFormat == 0 {
+		logger.Printf("debug: currPic is 1 sample Luma array")
+	} else {
+		logger.Printf("debug: currPic has Luma, Cb, and Cr arrays")
+	}
 	// This should be done only for certain ProfileIDC:
 	isProfileIDC := []int{100, 110, 122, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135}
 	// SpecialProfileCase1
@@ -315,6 +328,7 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	sps.PicHeightInMapUnitsMinus1 = ue(b.golomb())
 	if v := b.NextField("FrameMbsOnlyFlag", 1); v == 1 {
 		sps.FrameMbsOnly = true
+		logger.Printf("debug: SPS is frame MBs only")
 	}
 	if !sps.FrameMbsOnly {
 		if v := b.NextField("MBAdaptiveFrameFieldFlag", 1); v == 1 {
@@ -432,6 +446,22 @@ func NewSPS(rbsp []byte, showPacket bool) *SPS {
 	} // End VuiParameters Annex E.1.1
 	if showPacket {
 		debugPacket("SPS", sps)
+	}
+	logger.Printf("debug: SPS Profile %d Level %d", sps.Profile, sps.Level)
+	// TODO: Factor out into SPS.DecoderProfile(nalUnit)
+	//       Log which profile is encountered
+	if sps.Profile == 100 || ((sps.Profile == 77 || sps.Constraint1 == 1) && sps.Level+sps.Constraint3 <= sps.Level) {
+		// table A-1
+		if sps.FrameMbsOnly && sps.Constraint4 == 1 && sps.Constraint5 == 1 && sps.Level <= LEVEL_LIMIT {
+			logger.Printf("debug: Stream conforms to Constrained High Profile")
+		} else if sps.FrameMbsOnly && sps.Constraint4 == 1 {
+			logger.Printf("debug: Stream conforms to Progress High Profile")
+		} else {
+			logger.Printf("debug: Stream conforms to HighProfile")
+		}
+	} else {
+		logger.Printf("warning: Bitstream is not High Profile conformant\n\tProfile: %d Level: %d CS1: %d CS3: %d",
+			sps.Profile, sps.Level, sps.Constraint1, sps.Constraint3)
 	}
 	return &sps
 }
